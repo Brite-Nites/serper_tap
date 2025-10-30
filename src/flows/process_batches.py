@@ -134,6 +134,7 @@ def process_single_batch_results_task(
     return places_to_store
 
 
+@task(name="process-single-batch")
 def process_single_batch(
     job_id: str,
     keyword: str,
@@ -225,7 +226,65 @@ def process_single_batch(
         }
 
 
-@flow(name="process-job-batches", task_runner=ConcurrentTaskRunner(max_workers=20))
+@task(name="process-batch-results-and-track-stats")
+def process_batch_results_and_track_stats(
+    running_jobs: list[dict[str, Any]],
+    batch_results: list[dict[str, int]]
+) -> dict[str, Any]:
+    """Process batch results, track statistics, and mark completed jobs.
+
+    This task receives auto-resolved results from .map() and handles:
+    - Statistics tracking
+    - Job completion detection
+    - Marking jobs as done
+
+    Args:
+        running_jobs: List of job metadata dicts
+        batch_results: List of batch result dicts from process_single_batch
+
+    Returns:
+        Dict with tracked_batches, tracked_queries, completed_jobs
+    """
+    logger = get_run_logger()
+
+    tracked_batches = 0
+    tracked_queries = 0
+    completed_jobs = []
+
+    for job, batch_result in zip(running_jobs, batch_results):
+        job_id = job["job_id"]
+        queries_processed = batch_result["queries_processed"]
+        places_stored = batch_result["places_stored"]
+        batch_failed = batch_result.get("batch_failed", False)
+
+        # Track statistics
+        if queries_processed > 0:
+            tracked_batches += 1
+            tracked_queries += queries_processed
+            logger.info(
+                f"Batch complete for job {job_id}: "
+                f"{queries_processed} queries, {places_stored} places"
+            )
+        elif batch_failed:
+            # Batch failed - queries reset to 'queued', will retry next iteration
+            logger.warning(
+                f"Batch failed for job {job_id}: {batch_result.get('error', 'Unknown error')}. "
+                f"Queries reset to 'queued' for retry."
+            )
+        else:
+            # No queries found - job is complete
+            logger.info(f"Job {job_id} complete - marking as done")
+            mark_job_done_task(job_id)
+            completed_jobs.append(job_id)
+
+    return {
+        "tracked_batches": tracked_batches,
+        "tracked_queries": tracked_queries,
+        "completed_jobs": completed_jobs
+    }
+
+
+@flow(name="process-job-batches", task_runner=ConcurrentTaskRunner(max_workers=100))
 def process_job_batches() -> dict[str, Any]:
     """Process batches for all running jobs until none remain.
 
@@ -263,51 +322,34 @@ def process_job_batches() -> dict[str, Any]:
 
         logger.info(f"Found {len(running_jobs)} running job(s)")
 
-        # Step 2: Process one batch for EACH running job
-        for job in running_jobs:
-            job_id = job["job_id"]
-            keyword = job["keyword"]
-            state = job["state"]
-            batch_size = job["batch_size"]
+        # Step 2: Process one batch for EACH running job IN PARALLEL
+        # Extract parameters into lists for .map()
+        job_ids = [job["job_id"] for job in running_jobs]
+        keywords = [job["keyword"] for job in running_jobs]
+        states = [job["state"] for job in running_jobs]
+        batch_sizes = [job["batch_size"] for job in running_jobs]
 
-            logger.info(
-                f"Processing batch for job {job_id} "
-                f"(keyword={keyword}, state={state}, batch_size={batch_size})"
-            )
+        logger.info(f"Processing batches for {len(running_jobs)} jobs in parallel...")
 
-            # Process one batch
-            batch_result = process_single_batch(
-                job_id=job_id,
-                keyword=keyword,
-                state=state,
-                batch_size=batch_size
-            )
+        # Process all jobs in parallel using .map()
+        # This is the KEY PERFORMANCE FIX: jobs no longer wait in line
+        batch_results = process_single_batch.map(
+            job_id=job_ids,
+            keyword=keywords,
+            state=states,
+            batch_size=batch_sizes
+        )
 
-            queries_processed = batch_result["queries_processed"]
-            places_stored = batch_result["places_stored"]
-            batch_failed = batch_result.get("batch_failed", False)
+        # Step 3: Process results and track statistics
+        # Pass futures to task - Prefect auto-resolves them
+        iteration_stats = process_batch_results_and_track_stats(running_jobs, batch_results)
 
-            # Track statistics
-            if queries_processed > 0:
-                total_batches += 1
-                total_queries += queries_processed
-                logger.info(
-                    f"Batch complete for job {job_id}: "
-                    f"{queries_processed} queries, {places_stored} places"
-                )
-            elif batch_failed:
-                # Batch failed - queries reset to 'queued', will retry next iteration
-                logger.warning(
-                    f"Batch failed for job {job_id}: {batch_result.get('error', 'Unknown error')}. "
-                    f"Queries reset to 'queued' for retry."
-                )
-            else:
-                # No queries found - job is complete
-                logger.info(f"Job {job_id} complete - marking as done")
-                mark_job_done_task(job_id)
-                completed_jobs.append(job_id)
+        # Update totals
+        total_batches += iteration_stats["tracked_batches"]
+        total_queries += iteration_stats["tracked_queries"]
+        completed_jobs.extend(iteration_stats["completed_jobs"])
 
-        # Step 3: Rate limiting delay between iterations
+        # Step 4: Rate limiting delay between iterations
         logger.info("Waiting 1 second before next iteration...")
         time.sleep(1)
 
