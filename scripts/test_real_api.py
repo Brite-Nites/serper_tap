@@ -14,6 +14,7 @@ Usage:
 
 import uuid
 
+from src.models.schemas import JobParams
 from src.operations.bigquery_ops import (
     create_job,
     enqueue_queries,
@@ -61,17 +62,24 @@ def create_small_test_job(
     print(f"  API mode: {'MOCK' if settings.use_mock_api else 'REAL'}")
     print()
 
-    create_job(
-        job_id=job_id,
+    params = JobParams(
         keyword=keyword,
         state="AZ",  # Not used for single zip test
         pages=pages,
         batch_size=10,  # Small batch
         concurrency=3
     )
+    create_job(job_id=job_id, params=params)
 
     # Generate queries for single zip code
-    queries = [(zip_code, page) for page in range(1, pages + 1)]
+    queries = [
+        {
+            "zip": zip_code,
+            "page": page,
+            "q": f"{zip_code} {keyword}"
+        }
+        for page in range(1, pages + 1)
+    ]
 
     # Enqueue queries
     print(f"Enqueueing {len(queries)} queries...")
@@ -84,15 +92,15 @@ def create_small_test_job(
     print("TEST JOB CREATED")
     print("=" * 60)
     print(f"Job ID: {job_id}")
-    print(f"Total queries: {status['total_queries']}")
+    print(f"Total queries: {status['totals']['queries']}")
     print(f"Estimated cost: ${len(queries) * 0.01:.2f} (if using real API)")
     print()
     print("Next steps:")
-    print(f"  1. Process the job:")
-    print(f"     python -m src.flows.test_batch {job_id} --batch-size {len(queries)}")
+    print(f"  1. Process the job with test flow:")
+    print(f"     PYTHONPATH=$PWD .venv/bin/python -m src.flows.test_batch {job_id} {len(queries)}")
     print()
     print(f"  2. Or process with full processor:")
-    print(f"     python -m src.flows.process_batches")
+    print(f"     PYTHONPATH=$PWD .venv/bin/python -m src.flows.process_batches")
     print()
 
     return job_id

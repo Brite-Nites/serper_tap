@@ -9,6 +9,7 @@ from functools import lru_cache
 
 from google.cloud import bigquery
 from google.oauth2 import service_account
+import google.auth
 
 from src.utils.config import settings
 
@@ -20,6 +21,8 @@ def get_bigquery_client() -> bigquery.Client:
     This function is cached to ensure we reuse the same client instance
     across multiple calls, which is more efficient for connection pooling.
 
+    Supports both service account keys and application default credentials.
+
     Returns:
         bigquery.Client: Configured BigQuery client
 
@@ -28,6 +31,20 @@ def get_bigquery_client() -> bigquery.Client:
         ValueError: If credentials are invalid
     """
     credentials_path = settings.google_application_credentials
+
+    # Try application default credentials first (gcloud auth application-default login)
+    if "application_default_credentials.json" in credentials_path:
+        try:
+            credentials, project = google.auth.default(
+                scopes=["https://www.googleapis.com/auth/bigquery"]
+            )
+            # Use project from settings if available, otherwise from credentials
+            project = settings.bigquery_project_id or project
+            client = bigquery.Client(credentials=credentials, project=project)
+            return client
+        except Exception:
+            # Fall through to service account method
+            pass
 
     # Validate credentials file exists
     if not os.path.exists(credentials_path):
