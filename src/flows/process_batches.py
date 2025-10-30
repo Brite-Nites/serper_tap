@@ -18,6 +18,7 @@ from datetime import datetime
 from typing import Any
 
 from prefect import flow, get_run_logger, task
+from prefect.task_runners import ConcurrentTaskRunner
 
 from src.tasks.bigquery_tasks import (
     dequeue_batch_task,
@@ -213,7 +214,7 @@ def process_single_batch(
         }
 
 
-@flow(name="process-job-batches")
+@flow(name="process-job-batches", task_runner=ConcurrentTaskRunner(max_workers=20))
 def process_job_batches() -> dict[str, Any]:
     """Process batches for all running jobs until none remain.
 
@@ -296,8 +297,8 @@ def process_job_batches() -> dict[str, Any]:
                 completed_jobs.append(job_id)
 
         # Step 3: Rate limiting delay between iterations
-        logger.info("Waiting 3 seconds before next iteration...")
-        time.sleep(3)
+        logger.info("Waiting 1 second before next iteration...")
+        time.sleep(1)
 
     # Calculate runtime
     end_time = datetime.utcnow()

@@ -17,6 +17,7 @@ Usage:
 from typing import Any
 
 from prefect import flow, get_run_logger, task
+from prefect.task_runners import ConcurrentTaskRunner
 
 from src.operations import bigquery_ops
 from src.tasks.bigquery_tasks import (
@@ -126,7 +127,7 @@ def process_batch_results_task(
     return places_to_store
 
 
-@flow(name="test-batch-processing")
+@flow(name="test-batch-processing", task_runner=ConcurrentTaskRunner(max_workers=20))
 def test_batch_processing(job_id: str, batch_size: int = 10) -> dict[str, Any]:
     """Test flow: Process one batch of queries for an existing job.
 
