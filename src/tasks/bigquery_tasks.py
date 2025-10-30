@@ -209,3 +209,63 @@ def reset_batch_to_queued_task(claim_id: str) -> int:
         Number of queries reset to 'queued' status
     """
     return bigquery_ops.reset_batch_to_queued(claim_id)
+
+
+@task(retries=3, retry_delay_seconds=5)
+def batch_update_query_statuses_task(
+    job_id: str,
+    updates: list[dict[str, Any]]
+) -> int:
+    """Update status and metadata for multiple queries in a single batch operation.
+
+    Batched version of update_query_status_task() for dramatically improved performance.
+    Uses MERGE + UNNEST to update all queries in a single database call.
+
+    Args:
+        job_id: Job identifier
+        updates: List of update dicts, each with keys:
+            - zip: Zip code (STRING)
+            - page: Page number (INT)
+            - status: New status (STRING)
+            - api_status: HTTP status code (INT, optional)
+            - results_count: Number of results (INT, optional)
+            - credits: API credits consumed (INT, optional)
+            - error: Error message (STRING, optional)
+
+    Returns:
+        Number of rows updated
+
+    Example:
+        updates = [
+            {"zip": "85001", "page": 1, "status": "success", "api_status": 200,
+             "results_count": 10, "credits": 1, "error": None},
+            {"zip": "85002", "page": 1, "status": "success", "api_status": 200,
+             "results_count": 8, "credits": 1, "error": None},
+        ]
+        count = batch_update_query_statuses_task(job_id, updates)
+    """
+    return bigquery_ops.batch_update_query_statuses(job_id, updates)
+
+
+@task(retries=3, retry_delay_seconds=5)
+def batch_skip_remaining_pages_task(
+    job_id: str,
+    zips_to_skip: list[str]
+) -> int:
+    """Skip pages 2-3 for multiple zip codes in a single batch operation.
+
+    Batched version of skip_remaining_pages_task() for improved performance.
+    Used when page 1 returns <10 results (early exit optimization).
+
+    Args:
+        job_id: Job identifier
+        zips_to_skip: List of zip codes where pages 2-3 should be skipped
+
+    Returns:
+        Number of rows updated (0-2 per zip code)
+
+    Example:
+        zips_to_skip = ["85001", "85002", "85003"]
+        count = batch_skip_remaining_pages_task(job_id, zips_to_skip)
+    """
+    return bigquery_ops.batch_skip_remaining_pages(job_id, zips_to_skip)
