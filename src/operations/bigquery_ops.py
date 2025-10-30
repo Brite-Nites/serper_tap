@@ -170,7 +170,7 @@ def dequeue_batch(job_id: str, batch_size: int) -> list[dict[str, Any]]:
         batch_size: Maximum number of queries to claim
 
     Returns:
-        List of query dicts with keys: zip, page, q
+        List of query dicts with keys: zip, page, q, claim_id
 
     Raises:
         google.cloud.exceptions.GoogleCloudError: If operation fails
@@ -211,7 +211,7 @@ def dequeue_batch(job_id: str, batch_size: int) -> list[dict[str, Any]]:
 
     # Step 2: SELECT only queries with our claim_id
     select_query = f"""
-    SELECT zip, page, q
+    SELECT zip, page, q, claim_id
     FROM `{settings.bigquery_project_id}.{settings.bigquery_dataset}.serper_queries`
     WHERE job_id = @job_id AND claim_id = @claim_id
     ORDER BY zip, page
@@ -229,6 +229,7 @@ def dequeue_batch(job_id: str, batch_size: int) -> list[dict[str, Any]]:
             "zip": row.zip,
             "page": row.page,
             "q": row.q,
+            "claim_id": row.claim_id,
         }
         for row in results
     ]
@@ -648,3 +649,37 @@ def mark_job_done(job_id: str) -> None:
     ]
 
     execute_dml(update_query, parameters)
+
+
+def reset_batch_to_queued(claim_id: str) -> int:
+    """Reset queries from 'processing' back to 'queued' after batch failure.
+
+    When a batch fails (e.g., network error, API error), this function allows
+    the queries to be retried by resetting them back to 'queued' status and
+    clearing the claim_id.
+
+    Args:
+        claim_id: Claim ID of the failed batch
+
+    Returns:
+        Number of queries reset to 'queued' status
+
+    Raises:
+        google.cloud.exceptions.GoogleCloudError: If update fails
+    """
+    update_query = f"""
+    UPDATE `{settings.bigquery_project_id}.{settings.bigquery_dataset}.serper_queries`
+    SET
+        status = 'queued',
+        claim_id = NULL,
+        claimed_at = NULL
+    WHERE claim_id = @claim_id
+      AND status = 'processing'
+    """
+
+    parameters = [
+        bigquery.ScalarQueryParameter("claim_id", "STRING", claim_id)
+    ]
+
+    reset_count = execute_dml(update_query, parameters)
+    return reset_count

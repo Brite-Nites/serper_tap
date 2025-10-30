@@ -196,3 +196,16 @@ def mark_job_done_task(job_id: str) -> None:
         job_id: Job identifier
     """
     bigquery_ops.mark_job_done(job_id)
+
+
+@task(retries=3, retry_delay_seconds=5)
+def reset_batch_to_queued_task(claim_id: str) -> int:
+    """Reset queries from 'processing' back to 'queued' after batch failure.
+
+    Args:
+        claim_id: Claim ID of the failed batch
+
+    Returns:
+        Number of queries reset to 'queued' status
+    """
+    return bigquery_ops.reset_batch_to_queued(claim_id)

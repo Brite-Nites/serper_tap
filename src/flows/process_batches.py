@@ -23,6 +23,7 @@ from src.tasks.bigquery_tasks import (
     dequeue_batch_task,
     get_running_jobs_task,
     mark_job_done_task,
+    reset_batch_to_queued_task,
     skip_remaining_pages_task,
     store_places_task,
     update_job_stats_task,
@@ -130,6 +131,8 @@ def process_single_batch(
     """Process ONE batch for a single job.
 
     This is the core batch processing logic extracted from test_batch.py.
+    If any query fails after all retries, the entire batch is reset back to
+    'queued' status and can be retried in the next iteration.
 
     Args:
         job_id: Job identifier
@@ -140,7 +143,8 @@ def process_single_batch(
     Returns:
         {
             "queries_processed": 10,
-            "places_stored": 47
+            "places_stored": 47,
+            "batch_failed": False  # True if batch failed and was reset
         }
     """
     logger = get_run_logger()
@@ -152,39 +156,61 @@ def process_single_batch(
         logger.info(f"No queued queries for job {job_id}")
         return {
             "queries_processed": 0,
-            "places_stored": 0
+            "places_stored": 0,
+            "batch_failed": False
         }
 
-    logger.info(f"Processing {len(queries)} queries for job {job_id}")
+    # Extract claim_id for error recovery (all queries share same claim_id)
+    claim_id = queries[0].get("claim_id")
+    logger.info(f"Processing {len(queries)} queries for job {job_id} (claim: {claim_id})")
 
-    # Step 2: Process queries in parallel using .map()
-    results = fetch_serper_place_task.map(queries)
+    try:
+        # Step 2: Process queries in parallel using .map()
+        results = fetch_serper_place_task.map(queries)
 
-    # Step 3: Process results - update statuses, extract places, handle early exit
-    places = process_single_batch_results_task(
-        job_id=job_id,
-        keyword=keyword,
-        state=state,
-        queries=queries,
-        results=results
-    )
+        # Step 3: Process results - update statuses, extract places, handle early exit
+        places = process_single_batch_results_task(
+            job_id=job_id,
+            keyword=keyword,
+            state=state,
+            queries=queries,
+            results=results
+        )
 
-    # Step 4: Store places in BigQuery
-    if places:
-        logger.info(f"Storing {len(places)} places for job {job_id}...")
-        stored_count = store_places_task(job_id, places)
-        logger.info(f"Stored {stored_count} new places")
-    else:
-        logger.info("No places to store")
-        stored_count = 0
+        # Step 4: Store places in BigQuery
+        if places:
+            logger.info(f"Storing {len(places)} places for job {job_id}...")
+            stored_count = store_places_task(job_id, places)
+            logger.info(f"Stored {stored_count} new places")
+        else:
+            logger.info("No places to store")
+            stored_count = 0
 
-    # Step 5: Update job statistics
-    update_job_stats_task(job_id)
+        # Step 5: Update job statistics
+        update_job_stats_task(job_id)
 
-    return {
-        "queries_processed": len(queries),
-        "places_stored": stored_count
-    }
+        return {
+            "queries_processed": len(queries),
+            "places_stored": stored_count,
+            "batch_failed": False
+        }
+
+    except Exception as e:
+        # Batch failed after all retries - reset queries back to 'queued' for retry
+        logger.error(f"Batch failed for job {job_id}, claim {claim_id}: {type(e).__name__}: {e}")
+
+        if claim_id:
+            reset_count = reset_batch_to_queued_task(claim_id)
+            logger.info(f"Reset {reset_count} queries back to 'queued' status for retry")
+        else:
+            logger.warning("No claim_id found - cannot reset queries")
+
+        return {
+            "queries_processed": 0,
+            "places_stored": 0,
+            "batch_failed": True,
+            "error": str(e)
+        }
 
 
 @flow(name="process-job-batches")
@@ -247,6 +273,7 @@ def process_job_batches() -> dict[str, Any]:
 
             queries_processed = batch_result["queries_processed"]
             places_stored = batch_result["places_stored"]
+            batch_failed = batch_result.get("batch_failed", False)
 
             # Track statistics
             if queries_processed > 0:
@@ -255,6 +282,12 @@ def process_job_batches() -> dict[str, Any]:
                 logger.info(
                     f"Batch complete for job {job_id}: "
                     f"{queries_processed} queries, {places_stored} places"
+                )
+            elif batch_failed:
+                # Batch failed - queries reset to 'queued', will retry next iteration
+                logger.warning(
+                    f"Batch failed for job {job_id}: {batch_result.get('error', 'Unknown error')}. "
+                    f"Queries reset to 'queued' for retry."
                 )
             else:
                 # No queries found - job is complete
