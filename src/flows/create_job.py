@@ -1,7 +1,7 @@
 """Flow 1: Create a new scraping job and enqueue all queries.
 
-This flow initializes a job and enqueues all query combinations, but does NOT
-process them. Processing is handled separately by process_job_batches flow.
+This flow initializes a job, enqueues all query combinations, and automatically
+triggers the batch processor to handle query execution in the background.
 
 Usage:
     # As a Python function
@@ -13,6 +13,7 @@ Usage:
 """
 
 import argparse
+import subprocess
 import sys
 import uuid
 from typing import Any
@@ -39,8 +40,8 @@ def create_scraping_job(
 ) -> dict[str, Any]:
     """Create a new scraping job and enqueue all queries.
 
-    This flow returns immediately after enqueueing work. It does NOT process
-    the queries - that's handled by the process_job_batches flow.
+    This flow creates a job, enqueues all queries, and automatically triggers
+    the batch processor to handle query execution in the background.
 
     Args:
         keyword: Search keyword (e.g., "bars", "restaurants")
@@ -58,10 +59,11 @@ def create_scraping_job(
             "state": "AZ",
             "total_zips": 416,
             "total_queries": 1248,
-            "status": "running"
+            "status": "running",
+            "processor_info": "background-pid-12345"  # or "manual-start-required"
         }
 
-    Runtime: <10 seconds (just setup, no processing)
+    Runtime: <10 seconds (setup only, processing happens in background)
     """
     logger = get_run_logger()
 
@@ -131,14 +133,39 @@ def create_scraping_job(
     inserted = enqueue_queries_task(job_id, queries)
     logger.info(f"Enqueued {inserted} queries")
 
-    # Step 8: Return job summary
+    # Step 8: Trigger batch processor asynchronously
+    logger.info("Triggering batch processor in background...")
+    try:
+        # Start processor in background using subprocess
+        # This allows the job creation to return immediately while processing continues
+        import os
+        python_exe = sys.executable
+        processor_cmd = [python_exe, "-m", "src.flows.process_batches"]
+
+        # Start processor as background daemon process
+        proc = subprocess.Popen(
+            processor_cmd,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,  # Detach from parent
+            cwd=os.getcwd()
+        )
+        logger.info(f"Processor started in background (PID: {proc.pid})")
+        processor_info = f"background-pid-{proc.pid}"
+    except Exception as e:
+        logger.warning(f"Could not start processor in background: {e}")
+        logger.info("Processor should be started manually: python -m src.flows.process_batches")
+        processor_info = "manual-start-required"
+
+    # Step 9: Return job summary
     result = {
         "job_id": job_id,
         "keyword": keyword,
         "state": state,
         "total_zips": len(zips),
         "total_queries": total_queries,
-        "status": "running"
+        "status": "running",
+        "processor_info": processor_info
     }
 
     logger.info("=" * 60)
@@ -149,9 +176,9 @@ def create_scraping_job(
     logger.info(f"State: {state}")
     logger.info(f"Zip codes: {len(zips)}")
     logger.info(f"Total queries: {total_queries}")
+    logger.info(f"Processor: {processor_info}")
     logger.info("")
-    logger.info("To process this job, run:")
-    logger.info("  python -m src.flows.process_batches")
+    logger.info("Batch processor running - queries will be processed automatically.")
     logger.info("")
 
     return result
@@ -234,8 +261,9 @@ Examples:
         print("=" * 60)
         print(f"Job ID: {result['job_id']}")
         print(f"Queries created: {result['total_queries']}")
-        print("\nNext step:")
-        print("  python -m src.flows.process_batches")
+        print(f"Processor: {result['processor_info']}")
+        print("\nBatch processor started automatically in background.")
+        print("Queries will be processed shortly.")
         print("")
 
     except Exception as e:

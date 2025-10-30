@@ -33,7 +33,7 @@ def create_job(job_id: str, params: JobParams) -> dict[str, Any]:
     """
     query = f"""
     INSERT INTO `{settings.bigquery_project_id}.{settings.bigquery_dataset}.serper_jobs`
-    (job_id, keyword, state, pages, dry_run, concurrency, status, created_at, totals)
+    (job_id, keyword, state, pages, dry_run, concurrency, status, created_at, started_at, totals)
     VALUES (
         @job_id,
         @keyword,
@@ -42,6 +42,7 @@ def create_job(job_id: str, params: JobParams) -> dict[str, Any]:
         @dry_run,
         @concurrency,
         'running',
+        CURRENT_TIMESTAMP(),
         CURRENT_TIMESTAMP(),
         STRUCT(0 AS zips, 0 AS queries, 0 AS successes, 0 AS failures, 0 AS places, 0 AS credits)
     )
