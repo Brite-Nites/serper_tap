@@ -28,10 +28,14 @@ class Settings(BaseSettings):
         description="BigQuery dataset name for serper tables"
     )
 
-    # Serper API Configuration (will be used in Phase 2)
+    # Serper API Configuration
     serper_api_key: str = Field(
         default="",
-        description="API key for Serper.dev (optional in Phase 1)"
+        description="API key for Serper.dev"
+    )
+    use_mock_api: bool = Field(
+        default=True,
+        description="Use mock API (True) or real Serper API (False)"
     )
 
     # Prefect Configuration (will be used in Phase 2)

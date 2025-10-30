@@ -1,23 +1,24 @@
 """Serper API integration tasks.
 
-For Phase 2A, this contains a MOCK implementation for testing without
-spending API credits. The real implementation will be added in Phase 2B.
+Supports both mock and real Serper API implementations via environment variable toggle.
 """
 
 import random
 import time
 from typing import Any
 
-from prefect import task
+import httpx
+from prefect import task, get_run_logger
+
+from src.utils.config import settings
 
 
 @task(retries=3, retry_delay_seconds=5)
 def fetch_serper_place_task(query: dict[str, Any]) -> dict[str, Any]:
-    """Mock Serper API call for testing without spending credits.
+    """Fetch place data from Serper API (mock or real based on settings).
 
-    This mock implementation returns realistic data that matches Serper's
-    response structure. Results count is randomized (0-10) to test both
-    normal processing and the early exit optimization.
+    Uses mock API by default (settings.use_mock_api=True) for testing without
+    spending credits. Set use_mock_api=False to use real Serper.dev API.
 
     Args:
         query: Dict with keys:
@@ -43,6 +44,23 @@ def fetch_serper_place_task(query: dict[str, Any]) -> dict[str, Any]:
                 "page": 1
             }
         }
+    """
+    logger = get_run_logger()
+
+    # Toggle between mock and real API
+    if settings.use_mock_api:
+        logger.debug(f"Using MOCK API for query: {query['q']} page {query['page']}")
+        return _fetch_mock_api(query)
+    else:
+        logger.info(f"Using REAL Serper API for query: {query['q']} page {query['page']}")
+        return _fetch_real_api(query)
+
+
+def _fetch_mock_api(query: dict[str, Any]) -> dict[str, Any]:
+    """Mock Serper API implementation for testing without spending credits.
+
+    Returns realistic data with randomized results (0-10 places) to test
+    both normal processing and early exit optimization.
     """
     # Simulate network latency
     time.sleep(random.uniform(0.1, 0.3))
@@ -90,22 +108,51 @@ def fetch_serper_place_task(query: dict[str, Any]) -> dict[str, Any]:
     return response
 
 
-# Future: Real Serper API implementation
-# @task(retries=3, retry_delay_seconds=5)
-# def fetch_serper_place_task_real(query: dict[str, Any]) -> dict[str, Any]:
-#     """Real Serper API call (to be implemented in Phase 2B)."""
-#     import httpx
-#     from src.utils.config import settings
-#
-#     response = httpx.post(
-#         "https://google.serper.dev/places",
-#         headers={"X-API-KEY": settings.serper_api_key},
-#         json={
-#             "q": query["q"],
-#             "page": query["page"],
-#             "num": 10
-#         },
-#         timeout=30.0
-#     )
-#     response.raise_for_status()
-#     return response.json()
+def _fetch_real_api(query: dict[str, Any]) -> dict[str, Any]:
+    """Real Serper API implementation.
+
+    Makes actual API call to Serper.dev and returns real place data.
+    Requires settings.serper_api_key to be configured.
+
+    Raises:
+        ValueError: If serper_api_key is not configured
+        httpx.HTTPStatusError: If API returns error status
+        httpx.TimeoutException: If API call times out
+    """
+    if not settings.serper_api_key:
+        raise ValueError(
+            "SERPER_API_KEY environment variable is required when use_mock_api=False. "
+            "Get your API key from https://serper.dev"
+        )
+
+    # Make API request
+    try:
+        response = httpx.post(
+            "https://google.serper.dev/places",
+            headers={
+                "X-API-KEY": settings.serper_api_key,
+                "Content-Type": "application/json"
+            },
+            json={
+                "q": query["q"],
+                "page": query["page"],
+                "num": 10  # Request 10 results per page
+            },
+            timeout=30.0
+        )
+        response.raise_for_status()
+        return response.json()
+
+    except httpx.HTTPStatusError as e:
+        # Log the error and re-raise for Prefect retry logic
+        logger = get_run_logger()
+        logger.error(
+            f"Serper API error for {query['q']} page {query['page']}: "
+            f"{e.response.status_code} - {e.response.text}"
+        )
+        raise
+
+    except httpx.TimeoutException as e:
+        logger = get_run_logger()
+        logger.error(f"Serper API timeout for {query['q']} page {query['page']}")
+        raise
