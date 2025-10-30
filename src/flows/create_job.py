@@ -1,0 +1,247 @@
+"""Flow 1: Create a new scraping job and enqueue all queries.
+
+This flow initializes a job and enqueues all query combinations, but does NOT
+process them. Processing is handled separately by process_job_batches flow.
+
+Usage:
+    # As a Python function
+    from src.flows.create_job import create_scraping_job
+    result = create_scraping_job(keyword="bars", state="AZ", pages=3)
+
+    # As a CLI command
+    python -m src.flows.create_job --keyword bars --state AZ --pages 3
+"""
+
+import argparse
+import sys
+import uuid
+from typing import Any
+
+from prefect import flow, get_run_logger
+
+from src.models.schemas import JobParams
+from src.tasks.bigquery_tasks import (
+    create_job_task,
+    enqueue_queries_task,
+    get_zips_for_state_task,
+)
+from src.utils.config import settings
+
+
+@flow(name="create-scraping-job")
+def create_scraping_job(
+    keyword: str,
+    state: str,
+    pages: int | None = None,
+    batch_size: int | None = None,
+    concurrency: int | None = None,
+    dry_run: bool = False
+) -> dict[str, Any]:
+    """Create a new scraping job and enqueue all queries.
+
+    This flow returns immediately after enqueueing work. It does NOT process
+    the queries - that's handled by the process_job_batches flow.
+
+    Args:
+        keyword: Search keyword (e.g., "bars", "restaurants")
+        state: Two-letter state code (e.g., "AZ", "CA")
+        pages: Pages to scrape per zip (defaults to settings.default_pages)
+        batch_size: Batch size for processing (defaults to settings.default_batch_size)
+        concurrency: Concurrency level (defaults to settings.default_concurrency)
+        dry_run: If True, mark job as dry run (no real API calls)
+
+    Returns:
+        Dict with job details:
+        {
+            "job_id": "uuid",
+            "keyword": "bars",
+            "state": "AZ",
+            "total_zips": 416,
+            "total_queries": 1248,
+            "status": "running"
+        }
+
+    Runtime: <10 seconds (just setup, no processing)
+    """
+    logger = get_run_logger()
+
+    # Step 1: Apply defaults from settings for missing parameters
+    pages = pages if pages is not None else settings.default_pages
+    batch_size = batch_size if batch_size is not None else settings.default_batch_size
+    concurrency = concurrency if concurrency is not None else settings.default_concurrency
+
+    logger.info(
+        f"Creating scraping job: keyword={keyword}, state={state}, "
+        f"pages={pages}, batch_size={batch_size}"
+    )
+
+    # Step 2: Validate parameters using Pydantic model
+    params = JobParams(
+        keyword=keyword,
+        state=state,
+        pages=pages,
+        batch_size=batch_size,
+        concurrency=concurrency,
+        dry_run=dry_run
+    )
+
+    # Step 3: Generate unique job_id
+    job_id = str(uuid.uuid4())
+    logger.info(f"Generated job_id: {job_id}")
+
+    # Step 4: Create job in BigQuery
+    logger.info("Creating job in serper_jobs table...")
+    create_job_task(job_id, params)
+
+    # Step 5: Get all zip codes for the state
+    logger.info(f"Retrieving zip codes for {state}...")
+    zips = get_zips_for_state_task(state)
+
+    if not zips:
+        logger.warning(f"No zip codes found for state {state}")
+        return {
+            "job_id": job_id,
+            "keyword": keyword,
+            "state": state,
+            "total_zips": 0,
+            "total_queries": 0,
+            "status": "running",
+            "error": f"No zip codes found for state {state}"
+        }
+
+    logger.info(f"Found {len(zips)} zip codes in {state}")
+
+    # Step 6: Generate all query combinations (zip × page)
+    logger.info(f"Generating queries for {len(zips)} zips × {pages} pages...")
+    queries = []
+    for zip_code in zips:
+        for page in range(1, pages + 1):
+            query = {
+                "zip": zip_code,
+                "page": page,
+                "q": f"{zip_code} {keyword}"
+            }
+            queries.append(query)
+
+    total_queries = len(queries)
+    logger.info(f"Generated {total_queries} total queries")
+
+    # Step 7: Enqueue all queries in BigQuery
+    logger.info("Enqueuing queries in serper_queries table...")
+    inserted = enqueue_queries_task(job_id, queries)
+    logger.info(f"Enqueued {inserted} queries")
+
+    # Step 8: Return job summary
+    result = {
+        "job_id": job_id,
+        "keyword": keyword,
+        "state": state,
+        "total_zips": len(zips),
+        "total_queries": total_queries,
+        "status": "running"
+    }
+
+    logger.info("=" * 60)
+    logger.info("JOB CREATED SUCCESSFULLY")
+    logger.info("=" * 60)
+    logger.info(f"Job ID: {job_id}")
+    logger.info(f"Keyword: {keyword}")
+    logger.info(f"State: {state}")
+    logger.info(f"Zip codes: {len(zips)}")
+    logger.info(f"Total queries: {total_queries}")
+    logger.info("")
+    logger.info("To process this job, run:")
+    logger.info("  python -m src.flows.process_batches")
+    logger.info("")
+
+    return result
+
+
+def main():
+    """Command-line interface for creating scraping jobs."""
+    parser = argparse.ArgumentParser(
+        description="Create a new Serper scraping job",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  # Create a job for Arizona bars
+  python -m src.flows.create_job --keyword bars --state AZ
+
+  # Create a job with custom pages
+  python -m src.flows.create_job --keyword restaurants --state CA --pages 5
+
+  # Create a dry run job (no real API calls)
+  python -m src.flows.create_job --keyword cafes --state NY --dry-run
+        """
+    )
+
+    parser.add_argument(
+        "--keyword",
+        type=str,
+        required=True,
+        help="Search keyword (e.g., 'bars', 'restaurants')"
+    )
+
+    parser.add_argument(
+        "--state",
+        type=str,
+        required=True,
+        help="Two-letter state code (e.g., 'AZ', 'CA')"
+    )
+
+    parser.add_argument(
+        "--pages",
+        type=int,
+        default=None,
+        help=f"Pages to scrape per zip (default: {settings.default_pages})"
+    )
+
+    parser.add_argument(
+        "--batch-size",
+        type=int,
+        default=None,
+        help=f"Batch size for processing (default: {settings.default_batch_size})"
+    )
+
+    parser.add_argument(
+        "--concurrency",
+        type=int,
+        default=None,
+        help=f"Concurrency level (default: {settings.default_concurrency})"
+    )
+
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Mark job as dry run (no real API calls)"
+    )
+
+    args = parser.parse_args()
+
+    # Run the flow
+    try:
+        result = create_scraping_job(
+            keyword=args.keyword,
+            state=args.state,
+            pages=args.pages,
+            batch_size=args.batch_size,
+            concurrency=args.concurrency,
+            dry_run=args.dry_run
+        )
+
+        print("\n" + "=" * 60)
+        print("SUCCESS")
+        print("=" * 60)
+        print(f"Job ID: {result['job_id']}")
+        print(f"Queries created: {result['total_queries']}")
+        print("\nNext step:")
+        print("  python -m src.flows.process_batches")
+        print("")
+
+    except Exception as e:
+        print(f"\nError creating job: {e}", file=sys.stderr)
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()

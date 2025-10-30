@@ -1,0 +1,23 @@
+[tool.poetry]
+name = "serper-tap"
+version = "0.1.0"
+description = "Production-grade web scraping pipeline for Serper.dev place data with BigQuery queue architecture"
+authors = ["Your Name <your.email@example.com>"]
+readme = "README.md"
+packages = [{include = "src"}]
+
+[tool.poetry.dependencies]
+python = "^3.10"
+prefect = "^2.14"
+google-cloud-bigquery = "^3.13"
+httpx = "^0.25"
+pydantic = "^2.4"
+pydantic-settings = "^2.0"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^7.4"
+pytest-asyncio = "^0.21"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
