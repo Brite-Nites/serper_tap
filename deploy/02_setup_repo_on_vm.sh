@@ -14,7 +14,7 @@ set -euo pipefail
 # ----------------------------------------------------------------------------
 # CONFIGURATION
 # ----------------------------------------------------------------------------
-REPO_URL="https://github.com/YOUR_ORG/serper_tap.git"  # ⚠️ UPDATE THIS
+REPO_URL="https://github.com/Brite-Nites/serper_tap.git"
 REPO_DIR="/opt/serper_tap"
 PYTHON_VERSION="3.11"
 
