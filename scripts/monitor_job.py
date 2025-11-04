@@ -8,7 +8,12 @@ Example:
     python scripts/monitor_job.py 096c367e-5042-4c4b-a522-1c9cc3776c63
 """
 
+import os
 import sys
+_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+if _ROOT not in sys.path:
+    sys.path.insert(0, _ROOT)
+
 import time
 from datetime import datetime
 

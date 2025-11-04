@@ -157,7 +157,7 @@ def create_scraping_job(
         #   1. prefect deployment apply deployment.yaml
         #   2. prefect worker start --pool default-pool
         flow_run = run_deployment(
-            name="process-job-batches/production",
+            name=settings.prefect_deployment_name,
             timeout=0,  # Return immediately without waiting for completion
             parameters={}
         )

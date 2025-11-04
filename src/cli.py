@@ -65,9 +65,9 @@ def create_job_cli():
         print(f"Error: State must be 2 characters (got '{args.state}')", file=sys.stderr)
         sys.exit(1)
 
-    # Validate pages
-    if not 1 <= args.pages <= 3:
-        print(f"Error: Pages must be 1-3 (got {args.pages})", file=sys.stderr)
+    # Validate pages (align with JobParams limits)
+    if not 1 <= args.pages <= 10:
+        print(f"Error: Pages must be 1-10 (got {args.pages})", file=sys.stderr)
         sys.exit(1)
 
     # Create job parameters
@@ -91,7 +91,7 @@ def create_job_cli():
 
     # Run the flow
     try:
-        result = create_scraping_job(params)
+        result = create_scraping_job(**params.model_dump())
 
         print("=" * 60)
         print("JOB CREATED SUCCESSFULLY")
@@ -244,9 +244,9 @@ def health_check_cli():
     args = parser.parse_args()
 
     try:
-        from datetime import datetime
+        from datetime import datetime, timezone
         health = get_system_health()
-        health["timestamp"] = datetime.utcnow().isoformat() + "Z"
+        health["timestamp"] = datetime.now(timezone.utc).isoformat()
 
         if args.json:
             import json

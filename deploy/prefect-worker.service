@@ -1,0 +1,44 @@
+[Unit]
+Description=Prefect Worker for serper_tap (Production)
+Documentation=https://docs.prefect.io/
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=svc-prefect
+Group=svc-prefect
+WorkingDirectory=/opt/serper_tap
+
+# Load environment variables from .env.production
+EnvironmentFile=/opt/serper_tap/.env.production
+
+# Start the Prefect worker
+# Uses poetry to activate venv and run prefect worker
+ExecStart=/bin/bash -c 'cd /opt/serper_tap && /home/svc-prefect/.local/bin/poetry run prefect worker start --pool default-pool'
+
+# Restart policy
+Restart=on-failure
+RestartSec=10s
+StartLimitInterval=200
+StartLimitBurst=5
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=prefect-worker
+
+# Security hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/serper_tap
+ReadOnlyPaths=/etc/gcp
+
+# Resource limits
+LimitNOFILE=65535
+LimitNPROC=512
+
+[Install]
+WantedBy=multi-user.target

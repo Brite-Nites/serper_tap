@@ -53,10 +53,17 @@ AFTER=$(awk '/[0-9]/{print $1}' /tmp/pra_places_after.txt | tail -n1)
 if [ -n "${BEFORE:-}" ] && [ -n "${AFTER:-}" ] && [ "$AFTER" -gt "$BEFORE" ]; then echo "❌ places count increased (not idempotent)"; exit 1; fi
 
 echo "== QPM over last 10 minutes =="
-bq query --use_legacy_sql=false "WITH m AS (SELECT TIMESTAMP_TRUNC(ran_at, MINUTE) m, COUNT(*) q FROM \`${PROJECT}.raw_data.serper_queries\` WHERE status='success' AND ran_at >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 10 MINUTE) GROUP BY 1) SELECT IFNULL(AVG(q),0) avg_qpm FROM m" | tee /tmp/pra_qpm.txt
-AVG_QPM=$(awk '/[0-9]/{print $1}' /tmp/pra_qpm.txt | tail -n1)
-echo "AVG_QPM=${AVG_QPM:-0}"
-if [ "${AVG_QPM:-0}" != "0" ]; then
+if command -v jq >/dev/null 2>&1; then
+  AVG_QPM=$(bq query --use_legacy_sql=false --format=json \
+    "WITH m AS (SELECT TIMESTAMP_TRUNC(ran_at, MINUTE) m, COUNT(*) q FROM \`${PROJECT}.raw_data.serper_queries\` WHERE status='success' AND ran_at >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 10 MINUTE) GROUP BY 1) SELECT IFNULL(AVG(q),0) avg_qpm FROM m" \
+    | jq -r '.[0].avg_qpm // 0')
+else
+  AVG_QPM=$(bq query --use_legacy_sql=false --format=csv \
+    "WITH m AS (SELECT TIMESTAMP_TRUNC(ran_at, MINUTE) m, COUNT(*) q FROM \`${PROJECT}.raw_data.serper_queries\` WHERE status='success' AND ran_at >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 10 MINUTE) GROUP BY 1) SELECT IFNULL(AVG(q),0) FROM m" \
+    | tail -1)
+fi
+echo "AVG_QPM=${AVG_QPM}"
+if [ "${AVG_QPM}" != "0" ]; then
   awk -v qpm="${AVG_QPM:-0}" 'BEGIN{ if (qpm+0 < 300) { print "⚠️  avg_qpm < 300 (acceptable for test job)"; exit 0 } else { print "✅ qpm >= 300"; exit 0 } }'
 else
   echo "⚠️  No qpm data (job may not have completed)"

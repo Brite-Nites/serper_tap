@@ -304,9 +304,7 @@ def print_performance_report(result: dict[str, Any], batch_size: int):
         print(f"  ⚠️ BigQuery operations consuming {bigquery_pct:.0f}% of batch time")
         print("     Possible issues:")
         print("       - Network latency to BigQuery")
-        print("       - Query complexity")
-        param_count = len(result.get('updated_count', 0)) * 7 + len(result.get('skipped_count', 0))
-        print(f"       - High parameter count (~{param_count} parameters)")
+        print("       - Query complexity / parameter volume")
     else:
         print(f"  ✅ BigQuery batch operations efficient ({bigquery_pct:.0f}% of total time)")
 

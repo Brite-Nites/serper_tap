@@ -3,7 +3,7 @@
 Provides functions to track API credit usage, calculate costs, and enforce budget limits.
 """
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from google.cloud import bigquery
@@ -22,7 +22,7 @@ def get_daily_credit_usage(date: datetime | None = None) -> dict[str, Any]:
         Dict with total_credits, total_cost_usd, job_count
     """
     if date is None:
-        date = datetime.utcnow()
+        date = datetime.now(timezone.utc)
 
     # Set to start of day UTC
     start_of_day = date.replace(hour=0, minute=0, second=0, microsecond=0)

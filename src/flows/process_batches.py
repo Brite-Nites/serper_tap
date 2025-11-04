@@ -14,7 +14,7 @@ Usage:
 """
 
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 from prefect import flow, get_run_logger, task
@@ -305,7 +305,7 @@ def process_job_batches() -> dict[str, Any]:
         }
     """
     logger = get_run_logger()
-    start_time = datetime.utcnow()
+    start_time = datetime.now(timezone.utc)
 
     total_batches = 0
     total_queries = 0
@@ -355,7 +355,7 @@ def process_job_batches() -> dict[str, Any]:
         time.sleep(settings.processor_loop_delay_seconds)
 
     # Calculate runtime
-    end_time = datetime.utcnow()
+    end_time = datetime.now(timezone.utc)
     runtime_seconds = (end_time - start_time).total_seconds()
 
     result = {

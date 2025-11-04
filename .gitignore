@@ -53,3 +53,13 @@ htmlcov/
 
 # Prefect
 .prefect/
+
+# Production secrets (NEVER COMMIT)
+.env.production
+deployment_proof.json
+
+# Validation/test outputs
+test_results/
+validation.log
+validation_mac.log
+*.log

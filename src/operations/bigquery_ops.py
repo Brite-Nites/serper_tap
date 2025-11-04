@@ -8,7 +8,7 @@ using MERGE statements and atomic updates.
 import json
 import time
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 from google.cloud import bigquery
@@ -70,7 +70,7 @@ def create_job(job_id: str, params: JobParams) -> dict[str, Any]:
     return {
         "job_id": job_id,
         "status": "running",
-        "created_at": datetime.utcnow().isoformat()
+        "created_at": datetime.now(timezone.utc).isoformat()
     }
 
 
@@ -302,13 +302,14 @@ def _store_places_chunk(job_id: str, places: list[dict[str, Any]]) -> int:
             "job_id": job_id,
             "source": "serper_places",
             "source_version": "v1",
-            "ingest_ts": place.get("ingest_ts", datetime.utcnow().isoformat()),
+            "ingest_ts": place.get("ingest_ts", datetime.now(timezone.utc)),
             "keyword": place["keyword"],
             "state": place["state"],
             "zip": place["zip"],
             "page": place["page"],
             "place_uid": place["place_uid"],
             "payload": place["payload"],
+            "payload_raw": json.dumps(place["payload"], ensure_ascii=False),
             "api_status": place.get("api_status"),
             "api_ms": place.get("api_ms"),
             "results_count": place.get("results_count"),
@@ -323,7 +324,7 @@ def _store_places_chunk(job_id: str, places: list[dict[str, Any]]) -> int:
         values_clauses.append(
             f"(@ingest_id_{i}, @job_id, @source, @source_version, @ingest_ts_{i}, "
             f"@keyword_{i}, @state_{i}, @zip_{i}, @page_{i}, @place_uid_{i}, "
-            f"PARSE_JSON(@payload_{i}), @api_status_{i}, @api_ms_{i}, "
+            f"SAFE.PARSE_JSON(@payload_{i}), @payload_raw_{i}, @api_status_{i}, @api_ms_{i}, "
             f"@results_count_{i}, @credits_{i}, @error_{i})"
         )
 
@@ -335,7 +336,7 @@ def _store_places_chunk(job_id: str, places: list[dict[str, Any]]) -> int:
         SELECT * FROM UNNEST([
             STRUCT<ingest_id STRING, job_id STRING, source STRING, source_version STRING,
                    ingest_ts TIMESTAMP, keyword STRING, state STRING, zip STRING, page INT64,
-                   place_uid STRING, payload JSON, api_status INT64, api_ms INT64,
+                   place_uid STRING, payload JSON, payload_raw STRING, api_status INT64, api_ms INT64,
                    results_count INT64, credits INT64, error STRING>
             {values_sql}
         ])
@@ -343,10 +344,10 @@ def _store_places_chunk(job_id: str, places: list[dict[str, Any]]) -> int:
     ON target.job_id = source.job_id AND target.place_uid = source.place_uid
     WHEN NOT MATCHED THEN
         INSERT (ingest_id, job_id, source, source_version, ingest_ts, keyword, state,
-                zip, page, place_uid, payload, api_status, api_ms, results_count, credits, error)
+                zip, page, place_uid, payload, payload_raw, api_status, api_ms, results_count, credits, error)
         VALUES (source.ingest_id, source.job_id, source.source, source.source_version,
                 source.ingest_ts, source.keyword, source.state, source.zip, source.page,
-                source.place_uid, source.payload, source.api_status, source.api_ms,
+                source.place_uid, source.payload, source.payload_raw, source.api_status, source.api_ms,
                 source.results_count, source.credits, source.error)
     """
 
@@ -367,7 +368,8 @@ def _store_places_chunk(job_id: str, places: list[dict[str, Any]]) -> int:
             bigquery.ScalarQueryParameter(f"zip_{i}", "STRING", row["zip"]),
             bigquery.ScalarQueryParameter(f"page_{i}", "INT64", row["page"]),
             bigquery.ScalarQueryParameter(f"place_uid_{i}", "STRING", row["place_uid"]),
-            bigquery.ScalarQueryParameter(f"payload_{i}", "STRING", json.dumps(row["payload"])),
+            bigquery.ScalarQueryParameter(f"payload_{i}", "STRING", row["payload_raw"]),
+            bigquery.ScalarQueryParameter(f"payload_raw_{i}", "STRING", row["payload_raw"]),
             bigquery.ScalarQueryParameter(f"api_status_{i}", "INT64", row.get("api_status")),
             bigquery.ScalarQueryParameter(f"api_ms_{i}", "INT64", row.get("api_ms")),
             bigquery.ScalarQueryParameter(f"results_count_{i}", "INT64", row.get("results_count")),

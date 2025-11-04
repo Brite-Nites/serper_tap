@@ -43,6 +43,10 @@ class Settings(BaseSettings):
         default="http://localhost:4200/api",
         description="Prefect API URL for orchestration"
     )
+    prefect_deployment_name: str = Field(
+        default="process-job-batches/production",
+        description="Fully-qualified deployment name for run_deployment()"
+    )
 
     # Application Configuration
     default_batch_size: int = Field(
