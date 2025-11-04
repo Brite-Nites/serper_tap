@@ -13,12 +13,12 @@ Usage:
 """
 
 import argparse
-import subprocess
 import sys
 import uuid
 from typing import Any
 
 from prefect import flow, get_run_logger
+from prefect.deployments import run_deployment
 
 from src.models.schemas import JobParams
 from src.tasks.bigquery_tasks import (
@@ -27,6 +27,7 @@ from src.tasks.bigquery_tasks import (
     get_zips_for_state_task,
 )
 from src.utils.config import settings
+from src.utils.cost_tracking import validate_budget_for_job
 
 
 @flow(name="create-scraping-job")
@@ -87,34 +88,52 @@ def create_scraping_job(
         dry_run=dry_run
     )
 
-    # Step 3: Generate unique job_id
-    job_id = str(uuid.uuid4())
-    logger.info(f"Generated job_id: {job_id}")
-
-    # Step 4: Create job in BigQuery
-    logger.info("Creating job in serper_jobs table...")
-    create_job_task(job_id, params)
-
-    # Step 5: Get all zip codes for the state
+    # Step 3: Get all zip codes for the state
+    # (Do this before creating job to calculate budget impact)
     logger.info(f"Retrieving zip codes for {state}...")
     zips = get_zips_for_state_task(state)
 
     if not zips:
         logger.warning(f"No zip codes found for state {state}")
-        return {
-            "job_id": job_id,
-            "keyword": keyword,
-            "state": state,
-            "total_zips": 0,
-            "total_queries": 0,
-            "status": "running",
-            "error": f"No zip codes found for state {state}"
-        }
+        raise ValueError(f"No zip codes found for state {state}")
 
     logger.info(f"Found {len(zips)} zip codes in {state}")
 
-    # Step 6: Generate all query combinations (zip × page)
-    logger.info(f"Generating queries for {len(zips)} zips × {pages} pages...")
+    # Step 4: Calculate total queries for budget validation
+    total_queries = len(zips) * pages
+    logger.info(f"Job will create {total_queries} total queries ({len(zips)} zips × {pages} pages)")
+
+    # Step 5: Validate budget (only for real API, not dry runs or mock)
+    if not dry_run and not settings.use_mock_api:
+        logger.info("Checking daily budget...")
+        budget_check = validate_budget_for_job(total_queries)
+
+        if not budget_check["allowed"]:
+            logger.error(f"Budget validation failed: {budget_check['message']}")
+            raise ValueError(
+                f"Job blocked: {budget_check['message']}. "
+                f"Estimated cost: ${budget_check['job_estimate']['estimated_cost_usd']}"
+            )
+
+        if budget_check["budget_status"]["status"] == "warning":
+            logger.warning(f"Budget warning: {budget_check['budget_status']['message']}")
+
+        logger.info(
+            f"Budget OK - Estimated cost: ${budget_check['job_estimate']['estimated_cost_usd']} "
+            f"({budget_check['budget_status']['remaining_budget_usd']:.2f} remaining)"
+        )
+    else:
+        logger.info("Skipping budget check (dry_run=True or use_mock_api=True)")
+
+    # Step 6: Generate unique job_id and create job in BigQuery
+    job_id = str(uuid.uuid4())
+    logger.info(f"Generated job_id: {job_id}")
+
+    logger.info("Creating job in serper_jobs table...")
+    create_job_task(job_id, params)
+
+    # Step 7: Generate all query combinations (zip × page)
+    logger.info(f"Generating query details...")
     queries = []
     for zip_code in zips:
         for page in range(1, pages + 1):
@@ -125,36 +144,31 @@ def create_scraping_job(
             }
             queries.append(query)
 
-    total_queries = len(queries)
-    logger.info(f"Generated {total_queries} total queries")
-
-    # Step 7: Enqueue all queries in BigQuery
+    # Step 8: Enqueue all queries in BigQuery
     logger.info("Enqueuing queries in serper_queries table...")
     inserted = enqueue_queries_task(job_id, queries)
     logger.info(f"Enqueued {inserted} queries")
 
-    # Step 8: Trigger batch processor asynchronously
-    logger.info("Triggering batch processor in background...")
+    # Step 9: Trigger batch processor via Prefect deployment
+    logger.info("Triggering batch processor deployment...")
     try:
-        # Start processor in background using subprocess
-        # This allows the job creation to return immediately while processing continues
-        import os
-        python_exe = sys.executable
-        processor_cmd = [python_exe, "-m", "src.flows.process_batches"]
-
-        # Start processor as background daemon process
-        proc = subprocess.Popen(
-            processor_cmd,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            start_new_session=True,  # Detach from parent
-            cwd=os.getcwd()
+        # Trigger the batch processor deployment asynchronously
+        # This requires the deployment to be created and a worker to be running:
+        #   1. prefect deployment apply deployment.yaml
+        #   2. prefect worker start --pool default-pool
+        flow_run = run_deployment(
+            name="process-job-batches/production",
+            timeout=0,  # Return immediately without waiting for completion
+            parameters={}
         )
-        logger.info(f"Processor started in background (PID: {proc.pid})")
-        processor_info = f"background-pid-{proc.pid}"
+        logger.info(f"Processor deployment triggered (Flow Run ID: {flow_run.id})")
+        processor_info = f"deployment-run-{flow_run.id}"
     except Exception as e:
-        logger.warning(f"Could not start processor in background: {e}")
-        logger.info("Processor should be started manually: python -m src.flows.process_batches")
+        logger.warning(f"Could not trigger deployment: {e}")
+        logger.info("Deployment may not be set up. To configure:")
+        logger.info("  1. prefect deployment apply deployment.yaml")
+        logger.info("  2. prefect worker start --pool default-pool")
+        logger.info("Alternatively, start processor manually: python -m src.flows.process_batches")
         processor_info = "manual-start-required"
 
     # Step 9: Return job summary

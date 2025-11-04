@@ -446,10 +446,15 @@ pydantic-settings = "^2.0"  # For loading config from env vars
 - Failed jobs can be restarted; only incomplete queries are reprocessed
 - Zero duplicate places in database regardless of retries/restarts (enforced by MERGE)
 
-**Performance**:
-- System processes ~1000 queries in 2-3 minutes with parallelism
-- Batch size of 100 queries completes in 5-10 seconds
-- Early exit optimization reduces unnecessary API calls by 30-50% for sparse areas
+**Performance** ⚠️ **[UNDER INVESTIGATION - See PERFORMANCE.md]**:
+- **Measured (Oct 30, 2025)**: 48.9 queries/minute (1232 queries in 25.2 minutes)
+- **Target**: 333-500 queries/minute (not currently achieved)
+- **Gap**: System is 85% below target; investigation ongoing
+- **Known issues**:
+  - Config aliasing bug: `concurrency` used as `batch_size` (should use separate column)
+  - Parallelism not effective: batches taking 8-12x longer than expected
+  - Real API latency 5x higher than mock (1s vs 0.2s per query)
+- Early exit optimization working: 1.3% of queries skipped in production test
 
 **Reliability**:
 - If processor crashes mid-batch, restart picks up from BigQuery queue state

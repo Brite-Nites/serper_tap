@@ -38,40 +38,44 @@ def monitor_job(job_id: str, refresh_seconds: int = 10):
             iteration += 1
             timestamp = datetime.now().strftime("%H:%M:%S")
 
+            # Get job totals first (needed for total_queries)
+            job_status = get_job_status(job_id)
+            totals = job_status['totals']
+            total_queries = totals['queries']
+
             # Get query status distribution
             query = f"""
             SELECT
               status,
               COUNT(*) as count,
-              ROUND(100.0 * COUNT(*) / 1248, 1) as pct
+              ROUND(100.0 * COUNT(*) / @total_queries, 1) as pct
             FROM `{settings.bigquery_project_id}.{settings.bigquery_dataset}.serper_queries`
             WHERE job_id = @job_id
             GROUP BY status
             ORDER BY status
             """
 
-            params = [bigquery.ScalarQueryParameter("job_id", "STRING", job_id)]
+            params = [
+                bigquery.ScalarQueryParameter("job_id", "STRING", job_id),
+                bigquery.ScalarQueryParameter("total_queries", "INT64", total_queries)
+            ]
             results = execute_query(query, params)
 
             # Convert to dict
             status_counts = {row.status: (row.count, row.pct) for row in results}
 
-            # Get job totals
-            job_status = get_job_status(job_id)
-            totals = job_status['totals']
-
             # Calculate progress
             success_count = status_counts.get('success', (0, 0))[0]
             skipped_count = status_counts.get('skipped', (0, 0))[0]
             completed = success_count + skipped_count
-            progress_pct = round(100.0 * completed / 1248, 1)
+            progress_pct = round(100.0 * completed / total_queries, 1) if total_queries > 0 else 0
 
             # Calculate rate
             queries_since_last = success_count - last_success_count
             rate_per_10s = queries_since_last if iteration > 1 else 0
             est_minutes_remaining = 0
             if rate_per_10s > 0:
-                queries_remaining = 1248 - completed
+                queries_remaining = total_queries - completed
                 est_minutes_remaining = round((queries_remaining / rate_per_10s) * (refresh_seconds / 60), 1)
 
             last_success_count = success_count
@@ -79,14 +83,14 @@ def monitor_job(job_id: str, refresh_seconds: int = 10):
             # Print update
             print(f"[{timestamp}] Iteration {iteration}")
             print(f"  Status: {job_status['status']}")
-            print(f"  Progress: {completed}/1248 queries ({progress_pct}%)")
+            print(f"  Progress: {completed}/{total_queries} queries ({progress_pct}%)")
             print(f"  Success: {success_count}, Skipped: {skipped_count}, Queued: {status_counts.get('queued', (0, 0))[0]}")
 
             if totals['places'] > 0:
                 print(f"  Places found: {totals['places']:,}")
-                print(f"  Credits used: {totals['credits']} (${totals['credits'] * 0.01:.2f})")
+                print(f"  Credits used: {totals['credits']} (${totals['credits'] * settings.cost_per_credit:.2f})")
 
-            if rate_per_10s > 0 and completed < 1248:
+            if rate_per_10s > 0 and completed < total_queries:
                 print(f"  Rate: {rate_per_10s} queries/{refresh_seconds}s")
                 print(f"  Est. time remaining: {est_minutes_remaining} minutes")
 
@@ -99,7 +103,7 @@ def monitor_job(job_id: str, refresh_seconds: int = 10):
                 print(f"Total queries: {totals['queries']}")
                 print(f"Successes: {totals['successes']}")
                 print(f"Places found: {totals['places']:,}")
-                print(f"Credits used: {totals['credits']} (${totals['credits'] * 0.01:.2f})")
+                print(f"Credits used: {totals['credits']} (${totals['credits'] * settings.cost_per_credit:.2f})")
                 print()
                 break
 
@@ -111,7 +115,7 @@ def monitor_job(job_id: str, refresh_seconds: int = 10):
     except KeyboardInterrupt:
         print()
         print("Monitoring stopped by user")
-        print(f"Final status: {completed}/1248 queries completed ({progress_pct}%)")
+        print(f"Final status: {completed}/{total_queries} queries completed ({progress_pct}%)")
 
 
 if __name__ == "__main__":

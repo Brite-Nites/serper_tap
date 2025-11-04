@@ -58,6 +58,58 @@ class Settings(BaseSettings):
         description="Default number of pages to scrape per zip code"
     )
 
+    # Processor Configuration
+    processor_max_workers: int = Field(
+        default=100,
+        description="Maximum concurrent workers for batch processor (Prefect ConcurrentTaskRunner)"
+    )
+    processor_loop_delay_seconds: float = Field(
+        default=1.0,
+        description="Delay in seconds between batch processing iterations"
+    )
+
+    # API Configuration
+    serper_timeout_seconds: float = Field(
+        default=30.0,
+        description="HTTP timeout for Serper API calls"
+    )
+    serper_retries: int = Field(
+        default=3,
+        description="Number of retries for failed API calls"
+    )
+    serper_retry_delay_seconds: int = Field(
+        default=5,
+        description="Initial delay between retries (exponential backoff applied)"
+    )
+    serper_max_backoff_seconds: int = Field(
+        default=60,
+        description="Maximum backoff delay between retries"
+    )
+
+    # Optimization Settings
+    early_exit_threshold: int = Field(
+        default=10,
+        description="Skip pages 2-3 if page 1 has fewer than this many results"
+    )
+
+    # Cost Management
+    daily_budget_usd: float = Field(
+        default=100.0,
+        description="Daily budget limit in USD"
+    )
+    budget_soft_threshold_pct: int = Field(
+        default=80,
+        description="Warn when daily budget reaches this percentage"
+    )
+    budget_hard_threshold_pct: int = Field(
+        default=100,
+        description="Block new jobs when daily budget reaches this percentage"
+    )
+    cost_per_credit: float = Field(
+        default=0.01,
+        description="Cost per API credit in USD"
+    )
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",

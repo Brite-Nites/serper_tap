@@ -1,0 +1,53 @@
+# Prefect Deployment Configuration for Serper Tap Pipeline
+#
+# This deployment configuration enables production-grade orchestration of the
+# batch processing flow using Prefect's deployment system instead of subprocess.
+#
+# Setup Steps:
+# 1. Create the deployment:
+#    prefect deployment apply deployment.yaml
+#
+# 2. Start a worker to execute the flow:
+#    prefect worker start --pool default-pool
+#
+# 3. Trigger the deployment from code:
+#    from prefect.deployments import run_deployment
+#    run_deployment(name="process-job-batches/production", timeout=0)
+
+deployments:
+  - name: production
+    description: "Production batch processor for Serper scraping jobs"
+
+    # Flow definition
+    entrypoint: src/flows/process_batches.py:process_job_batches
+
+    # Work pool configuration
+    work_pool:
+      name: default-pool
+      work_queue_name: default
+      job_variables:
+        # Environment variables for the flow
+        env:
+          USE_MOCK_API: "{{ USE_MOCK_API | default('false') }}"
+          BIGQUERY_PROJECT_ID: "{{ BIGQUERY_PROJECT_ID }}"
+          BIGQUERY_DATASET: "{{ BIGQUERY_DATASET }}"
+          GOOGLE_APPLICATION_CREDENTIALS: "{{ GOOGLE_APPLICATION_CREDENTIALS }}"
+
+    # Scheduling (optional - for periodic batch processing)
+    # Uncomment to enable scheduled runs every 5 minutes
+    # schedules:
+    #   - cron: "*/5 * * * *"
+    #     active: true
+    #     timezone: "America/Los_Angeles"
+
+    # Parameters (can be overridden at runtime)
+    parameters: {}
+
+    # Tags for filtering and organization
+    tags:
+      - production
+      - batch-processor
+      - serper-tap
+
+    # Version control
+    version: 1

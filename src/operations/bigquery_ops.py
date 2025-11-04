@@ -16,6 +16,12 @@ from google.cloud import bigquery
 from src.models.schemas import JobParams, JobRecord, JobStats
 from src.utils.bigquery_client import execute_dml, execute_query, get_bigquery_client
 from src.utils.config import settings
+from src.utils.timing import timing
+
+# BigQuery MERGE operation limits
+# Safe chunk size to avoid hitting parameter limits (10000 params max)
+# With ~10 params per row, 500 rows = ~5000 params (50% safety margin)
+MERGE_CHUNK_SIZE = 500
 
 
 def create_job(job_id: str, params: JobParams) -> dict[str, Any]:
@@ -33,13 +39,14 @@ def create_job(job_id: str, params: JobParams) -> dict[str, Any]:
     """
     query = f"""
     INSERT INTO `{settings.bigquery_project_id}.{settings.bigquery_dataset}.serper_jobs`
-    (job_id, keyword, state, pages, dry_run, concurrency, status, created_at, started_at, totals)
+    (job_id, keyword, state, pages, dry_run, batch_size, concurrency, status, created_at, started_at, totals)
     VALUES (
         @job_id,
         @keyword,
         @state,
         @pages,
         @dry_run,
+        @batch_size,
         @concurrency,
         'running',
         CURRENT_TIMESTAMP(),
@@ -54,6 +61,7 @@ def create_job(job_id: str, params: JobParams) -> dict[str, Any]:
         bigquery.ScalarQueryParameter("state", "STRING", params.state),
         bigquery.ScalarQueryParameter("pages", "INT64", params.pages),
         bigquery.ScalarQueryParameter("dry_run", "BOOL", params.dry_run),
+        bigquery.ScalarQueryParameter("batch_size", "INT64", params.batch_size),
         bigquery.ScalarQueryParameter("concurrency", "INT64", params.concurrency),
     ]
 
@@ -93,18 +101,15 @@ def get_zips_for_state(state: str) -> list[str]:
     return [row.zip for row in results]
 
 
-def enqueue_queries(job_id: str, queries: list[dict[str, Any]]) -> int:
-    """Enqueue queries for a job using idempotent MERGE operation.
-
-    This function uses MERGE to ensure that re-running enqueue with the same
-    queries won't create duplicates. Primary key is (job_id, zip, page).
+def _enqueue_queries_chunk(job_id: str, queries: list[dict[str, Any]]) -> int:
+    """Internal helper: enqueue a single chunk of queries (<=500 rows).
 
     Args:
         job_id: Job identifier
-        queries: List of query dicts with keys: zip, page, q
+        queries: List of query dicts (max 500 rows)
 
     Returns:
-        Number of new queries inserted (not total queries)
+        Number of new queries inserted
 
     Raises:
         google.cloud.exceptions.GoogleCloudError: If MERGE fails
@@ -150,8 +155,44 @@ def enqueue_queries(job_id: str, queries: list[dict[str, Any]]) -> int:
             bigquery.ScalarQueryParameter(f"q_{i}", "STRING", q["q"]),
         ])
 
-    rows_affected = execute_dml(query, parameters)
+    with timing(f"MERGE enqueue {len(queries)} queries"):
+        rows_affected = execute_dml(query, parameters)
     return rows_affected
+
+
+def enqueue_queries(job_id: str, queries: list[dict[str, Any]]) -> int:
+    """Enqueue queries for a job using idempotent MERGE operation.
+
+    This function uses MERGE to ensure that re-running enqueue with the same
+    queries won't create duplicates. Primary key is (job_id, zip, page).
+
+    For large query sets (e.g., California: 5,301 queries), this automatically
+    chunks the operation into batches of 500 rows to avoid BigQuery parameter
+    limits (10,000 params max).
+
+    Args:
+        job_id: Job identifier
+        queries: List of query dicts with keys: zip, page, q
+
+    Returns:
+        Number of new queries inserted (not total queries)
+
+    Raises:
+        google.cloud.exceptions.GoogleCloudError: If MERGE fails
+    """
+    if not queries:
+        return 0
+
+    # Chunk large query sets to avoid BigQuery parameter limits
+    if len(queries) > MERGE_CHUNK_SIZE:
+        total_inserted = 0
+        for i in range(0, len(queries), MERGE_CHUNK_SIZE):
+            chunk = queries[i:i + MERGE_CHUNK_SIZE]
+            inserted = _enqueue_queries_chunk(job_id, chunk)
+            total_inserted += inserted
+        return total_inserted
+    else:
+        return _enqueue_queries_chunk(job_id, queries)
 
 
 def dequeue_batch(job_id: str, batch_size: int) -> list[dict[str, Any]]:
@@ -204,7 +245,8 @@ def dequeue_batch(job_id: str, batch_size: int) -> list[dict[str, Any]]:
         bigquery.ScalarQueryParameter("batch_size", "INT64", batch_size),
     ]
 
-    claimed_count = execute_dml(update_query, update_params)
+    with timing(f"Atomic claim batch (size={batch_size})"):
+        claimed_count = execute_dml(update_query, update_params)
 
     if claimed_count == 0:
         return []  # No queued queries found
@@ -222,7 +264,8 @@ def dequeue_batch(job_id: str, batch_size: int) -> list[dict[str, Any]]:
         bigquery.ScalarQueryParameter("claim_id", "STRING", claim_id),
     ]
 
-    results = execute_query(select_query, select_params)
+    with timing(f"SELECT claimed queries (expected={claimed_count})"):
+        results = execute_query(select_query, select_params)
 
     return [
         {
@@ -235,16 +278,12 @@ def dequeue_batch(job_id: str, batch_size: int) -> list[dict[str, Any]]:
     ]
 
 
-def store_places(job_id: str, places: list[dict[str, Any]]) -> int:
-    """Store scraped places using idempotent MERGE operation.
-
-    MERGE prevents duplicate places based on (job_id, place_uid). If the same
-    place is scraped multiple times (e.g., due to retries), only the first
-    instance is stored.
+def _store_places_chunk(job_id: str, places: list[dict[str, Any]]) -> int:
+    """Internal helper: store a single chunk of places (<=500 rows).
 
     Args:
         job_id: Job identifier
-        places: List of place dicts with keys matching PlaceRecord schema
+        places: List of place dicts (max 500 rows)
 
     Returns:
         Number of new places inserted
@@ -336,8 +375,44 @@ def store_places(job_id: str, places: list[dict[str, Any]]) -> int:
             bigquery.ScalarQueryParameter(f"error_{i}", "STRING", row.get("error")),
         ])
 
-    rows_affected = execute_dml(merge_query, parameters)
+    with timing(f"MERGE store {len(places)} places"):
+        rows_affected = execute_dml(merge_query, parameters)
     return rows_affected
+
+
+def store_places(job_id: str, places: list[dict[str, Any]]) -> int:
+    """Store scraped places using idempotent MERGE operation.
+
+    MERGE prevents duplicate places based on (job_id, place_uid). If the same
+    place is scraped multiple times (e.g., due to retries), only the first
+    instance is stored.
+
+    For large place sets, this automatically chunks the operation into batches
+    of 500 rows to avoid BigQuery parameter limits (10,000 params max).
+
+    Args:
+        job_id: Job identifier
+        places: List of place dicts with keys matching PlaceRecord schema
+
+    Returns:
+        Number of new places inserted
+
+    Raises:
+        google.cloud.exceptions.GoogleCloudError: If MERGE fails
+    """
+    if not places:
+        return 0
+
+    # Chunk large place sets to avoid BigQuery parameter limits
+    if len(places) > MERGE_CHUNK_SIZE:
+        total_inserted = 0
+        for i in range(0, len(places), MERGE_CHUNK_SIZE):
+            chunk = places[i:i + MERGE_CHUNK_SIZE]
+            inserted = _store_places_chunk(job_id, chunk)
+            total_inserted += inserted
+        return total_inserted
+    else:
+        return _store_places_chunk(job_id, places)
 
 
 def update_job_stats(job_id: str) -> dict[str, int]:
@@ -604,7 +679,8 @@ def get_running_jobs() -> list[dict[str, Any]]:
         keyword,
         state,
         pages,
-        concurrency AS batch_size
+        batch_size,
+        concurrency
     FROM `{settings.bigquery_project_id}.{settings.bigquery_dataset}.serper_jobs`
     WHERE status = 'running'
     ORDER BY created_at ASC
@@ -620,6 +696,7 @@ def get_running_jobs() -> list[dict[str, Any]]:
             "state": row.state,
             "pages": row.pages,
             "batch_size": row.batch_size,
+            "concurrency": row.concurrency,
         })
 
     return jobs
@@ -774,7 +851,8 @@ def batch_update_query_statuses(
             bigquery.ScalarQueryParameter(f"error_{i}", "STRING", update.get("error")),
         ])
 
-    rows_updated = execute_dml(merge_query, parameters)
+    with timing(f"MERGE batch update {len(updates)} query statuses"):
+        rows_updated = execute_dml(merge_query, parameters)
     return rows_updated
 
 
@@ -846,5 +924,6 @@ def batch_skip_remaining_pages(
             bigquery.ScalarQueryParameter(f"zip_{i}", "STRING", zip_code)
         )
 
-    rows_updated = execute_dml(merge_query, parameters)
+    with timing(f"MERGE batch skip {len(zips_to_skip)} zips (pages 2-3)"):
+        rows_updated = execute_dml(merge_query, parameters)
     return rows_updated

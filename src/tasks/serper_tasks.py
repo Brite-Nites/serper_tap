@@ -11,9 +11,14 @@ import httpx
 from prefect import task, get_run_logger
 
 from src.utils.config import settings
+from src.utils.timing import timing
 
 
-@task(retries=3, retry_delay_seconds=5)
+@task(
+    retries=settings.serper_retries,
+    retry_delay_seconds=settings.serper_retry_delay_seconds,
+    retry_jitter_factor=0.5  # Add jitter to prevent thundering herd
+)
 def fetch_serper_place_task(query: dict[str, Any]) -> dict[str, Any]:
     """Fetch place data from Serper API (mock or real based on settings).
 
@@ -109,7 +114,7 @@ def _fetch_mock_api(query: dict[str, Any]) -> dict[str, Any]:
 
 
 def _fetch_real_api(query: dict[str, Any]) -> dict[str, Any]:
-    """Real Serper API implementation.
+    """Real Serper API implementation with structured error handling.
 
     Makes actual API call to Serper.dev and returns real place data.
     Requires settings.serper_api_key to be configured.
@@ -118,7 +123,10 @@ def _fetch_real_api(query: dict[str, Any]) -> dict[str, Any]:
         ValueError: If serper_api_key is not configured
         httpx.HTTPStatusError: If API returns error status
         httpx.TimeoutException: If API call times out
+        httpx.RequestError: For network errors
     """
+    logger = get_run_logger()
+
     if not settings.serper_api_key:
         raise ValueError(
             "SERPER_API_KEY environment variable is required when use_mock_api=False. "
@@ -127,32 +135,72 @@ def _fetch_real_api(query: dict[str, Any]) -> dict[str, Any]:
 
     # Make API request
     try:
-        response = httpx.post(
-            "https://google.serper.dev/places",
-            headers={
-                "X-API-KEY": settings.serper_api_key,
-                "Content-Type": "application/json"
-            },
-            json={
-                "q": query["q"],
-                "page": query["page"],
-                "num": 10  # Request 10 results per page
-            },
-            timeout=30.0
+        with timing(f"Serper API call: {query['q']} page {query['page']}"):
+            response = httpx.post(
+                "https://google.serper.dev/places",
+                headers={
+                    "X-API-KEY": settings.serper_api_key,
+                    "Content-Type": "application/json"
+                },
+                json={
+                    "q": query["q"],
+                    "page": query["page"],
+                    "num": 10  # Request 10 results per page
+                },
+                timeout=settings.serper_timeout_seconds
+            )
+            response.raise_for_status()
+
+        # Successful response
+        result = response.json()
+        logger.debug(
+            f"Serper API success: {query['q']} page {query['page']} "
+            f"- {len(result.get('places', []))} places, {result.get('credits', 1)} credits"
         )
-        response.raise_for_status()
-        return response.json()
+        return result
 
     except httpx.HTTPStatusError as e:
-        # Log the error and re-raise for Prefect retry logic
-        logger = get_run_logger()
-        logger.error(
-            f"Serper API error for {query['q']} page {query['page']}: "
-            f"{e.response.status_code} - {e.response.text}"
-        )
+        status_code = e.response.status_code
+
+        # Categorize errors by status code
+        if status_code == 401:
+            logger.error(f"Serper API authentication failed - check API key")
+        elif status_code == 429:
+            logger.warning(f"Serper API rate limit exceeded - will retry")
+        elif 400 <= status_code < 500:
+            logger.error(
+                f"Serper API client error {status_code} for {query['q']} page {query['page']}: "
+                f"{e.response.text}"
+            )
+        else:  # 500+
+            logger.error(
+                f"Serper API server error {status_code} for {query['q']} page {query['page']}: "
+                f"{e.response.text}"
+            )
+
+        # Re-raise for Prefect retry logic
+        # Prefect will retry automatically with exponential backoff
         raise
 
     except httpx.TimeoutException as e:
-        logger = get_run_logger()
-        logger.error(f"Serper API timeout for {query['q']} page {query['page']}")
+        logger.warning(
+            f"Serper API timeout after {settings.serper_timeout_seconds}s "
+            f"for {query['q']} page {query['page']} - will retry"
+        )
+        raise
+
+    except httpx.RequestError as e:
+        # Network errors (DNS, connection refused, etc.)
+        logger.error(
+            f"Serper API network error for {query['q']} page {query['page']}: "
+            f"{type(e).__name__}: {e}"
+        )
+        raise
+
+    except Exception as e:
+        # Catch-all for unexpected errors
+        logger.error(
+            f"Unexpected error calling Serper API for {query['q']} page {query['page']}: "
+            f"{type(e).__name__}: {e}"
+        )
         raise

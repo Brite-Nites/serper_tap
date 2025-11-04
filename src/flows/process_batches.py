@@ -31,6 +31,7 @@ from src.tasks.bigquery_tasks import (
     update_job_stats_task,
 )
 from src.tasks.serper_tasks import fetch_serper_place_task
+from src.utils.config import settings
 
 
 @task(name="process-single-batch-results")
@@ -86,11 +87,11 @@ def process_single_batch_results_task(
         })
 
         # Collect early exit data (no DB call yet)
-        if query["page"] == 1 and results_count < 10:
+        if query["page"] == 1 and results_count < settings.early_exit_threshold:
             zips_to_skip.append(query["zip"])
             logger.info(
                 f"Early exit candidate: zip {query['zip']} "
-                f"(page 1 had only {results_count} results)"
+                f"(page 1 had only {results_count} results, threshold={settings.early_exit_threshold})"
             )
 
         # Extract places from API response
@@ -284,7 +285,7 @@ def process_batch_results_and_track_stats(
     }
 
 
-@flow(name="process-job-batches", task_runner=ConcurrentTaskRunner(max_workers=100))
+@flow(name="process-job-batches", task_runner=ConcurrentTaskRunner(max_workers=settings.processor_max_workers))
 def process_job_batches() -> dict[str, Any]:
     """Process batches for all running jobs until none remain.
 
@@ -350,8 +351,8 @@ def process_job_batches() -> dict[str, Any]:
         completed_jobs.extend(iteration_stats["completed_jobs"])
 
         # Step 4: Rate limiting delay between iterations
-        logger.info("Waiting 1 second before next iteration...")
-        time.sleep(1)
+        logger.info(f"Waiting {settings.processor_loop_delay_seconds}s before next iteration...")
+        time.sleep(settings.processor_loop_delay_seconds)
 
     # Calculate runtime
     end_time = datetime.utcnow()
