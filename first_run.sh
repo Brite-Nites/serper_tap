@@ -11,6 +11,9 @@
 
 set -euo pipefail
 
+# Load shared validation helpers
+source "$(dirname "$0")/scripts/lib/validation_helpers.sh"
+
 # ----------------------------------------------------------------------------
 # CONFIGURATION
 # ----------------------------------------------------------------------------
@@ -41,12 +44,6 @@ QPM_WARN=250
 JSON_SUCCESS_TARGET=99.5
 JSON_SUCCESS_WARN=99.0
 
-# Colors
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-NC='\033[0m' # No Color
-
 echo "============================================================================"
 echo "FIRST RUN / CANARY VALIDATION"
 echo "============================================================================"
@@ -59,20 +56,11 @@ echo ""
 declare -A RESULTS
 EXIT_CODE=0
 
-pass() {
-    echo -e "${GREEN}✅ PASS${NC}: $1"
-    RESULTS["$1"]="PASS"
-}
-
+# Override fail() to also set EXIT_CODE
 fail() {
     echo -e "${RED}❌ FAIL${NC}: $1"
     RESULTS["$1"]="FAIL"
     EXIT_CODE=1
-}
-
-warn() {
-    echo -e "${YELLOW}⚠️  WARN${NC}: $1"
-    RESULTS["$1"]="WARN"
 }
 
 # ----------------------------------------------------------------------------
@@ -261,27 +249,7 @@ fi
 echo ""
 echo "Step 7: Measuring performance (QPM)..."
 
-QPM_RESULT=$(bq query --use_legacy_sql=false --format=csv \
-    "SELECT ROUND(60.0*COUNT(*)/NULLIF(TIMESTAMP_DIFF(MAX(ran_at),MIN(ran_at),SECOND),0),1) as qpm
-     FROM \`$BIGQUERY_PROJECT_ID.$BIGQUERY_DATASET.serper_queries\`
-     WHERE ran_at >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 10 MINUTE)
-       AND status='success'" 2>&1 | tail -1)
-
-if [ -n "$QPM_RESULT" ] && [ "$QPM_RESULT" != "null" ]; then
-    QPM_VALUE=$(echo "$QPM_RESULT" | tr -d ' ')
-    echo "  QPM (10-min): $QPM_VALUE"
-
-    if (( $(echo "$QPM_VALUE >= $QPM_TARGET" | bc -l) )); then
-        pass "QPM target met: $QPM_VALUE qpm (target ≥$QPM_TARGET)"
-    elif (( $(echo "$QPM_VALUE >= $QPM_WARN" | bc -l) )); then
-        warn "QPM below target: $QPM_VALUE qpm (target ≥$QPM_TARGET)"
-    else
-        fail "QPM critically low: $QPM_VALUE qpm (target ≥$QPM_TARGET)"
-    fi
-else
-    warn "QPM calculation failed (insufficient data)"
-    QPM_VALUE="0"
-fi
+QPM_VALUE=$(check_qpm 10 "$QPM_TARGET" "$QPM_WARN")
 
 # ----------------------------------------------------------------------------
 # Step 8: Check JSON Parse Health
@@ -289,34 +257,7 @@ fi
 echo ""
 echo "Step 8: Checking JSON parse health (24h)..."
 
-JSON_HEALTH=$(bq query --use_legacy_sql=false --format=csv \
-    "SELECT
-       COUNTIF(payload IS NULL AND payload_raw IS NOT NULL) AS unparsable,
-       COUNTIF(payload IS NOT NULL) AS parsed
-     FROM \`$BIGQUERY_PROJECT_ID.$BIGQUERY_DATASET.serper_places\`
-     WHERE ingest_ts >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 24 HOUR)" 2>&1 | tail -1)
-
-UNPARSABLE=$(echo "$JSON_HEALTH" | cut -d',' -f1)
-PARSED=$(echo "$JSON_HEALTH" | cut -d',' -f2)
-TOTAL=$((UNPARSABLE + PARSED))
-
-if [ "$TOTAL" -gt 0 ]; then
-    PARSE_PCT=$(echo "scale=2; 100 * $PARSED / $TOTAL" | bc)
-    echo "  Unparsable: $UNPARSABLE"
-    echo "  Parsed:     $PARSED"
-    echo "  Success:    ${PARSE_PCT}%"
-
-    if (( $(echo "$PARSE_PCT >= $JSON_SUCCESS_TARGET" | bc -l) )); then
-        pass "JSON parsing healthy: ${PARSE_PCT}% (target ≥${JSON_SUCCESS_TARGET}%)"
-    elif (( $(echo "$PARSE_PCT >= $JSON_SUCCESS_WARN" | bc -l) )); then
-        warn "JSON parsing: ${PARSE_PCT}% (target ≥${JSON_SUCCESS_TARGET}%)"
-    else
-        fail "JSON parsing degraded: ${PARSE_PCT}%"
-    fi
-else
-    warn "No recent place data for JSON health check"
-    PARSE_PCT="100"
-fi
+PARSE_PCT=$(check_json_health 24 "$JSON_SUCCESS_TARGET" "$JSON_SUCCESS_WARN")
 
 # ----------------------------------------------------------------------------
 # Step 9: Check Cost Today

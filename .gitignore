@@ -14,6 +14,8 @@ eggs/
 .eggs/
 lib/
 lib64/
+# But don't ignore scripts/lib (shared validation helpers)
+!scripts/lib/
 parts/
 sdist/
 var/

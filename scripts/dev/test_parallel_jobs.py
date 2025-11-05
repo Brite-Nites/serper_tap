@@ -15,7 +15,8 @@ import uuid
 
 from src.flows.process_batches import process_job_batches
 from src.models.schemas import JobParams
-from src.operations import bigquery_ops
+from src.operations.job_ops import create_job
+from src.operations.query_ops import enqueue_queries
 
 
 def clear_running_jobs():
@@ -65,7 +66,7 @@ def create_small_test_jobs(num_jobs: int = 3, queries_per_job: int = 10) -> list
             batch_size=queries_per_job,
             concurrency=20
         )
-        bigquery_ops.create_job(job_id=job_id, params=params)
+        create_job(job_id=job_id, params=params)
 
         # Create queries (limit to queries_per_job)
         queries = []
@@ -76,7 +77,7 @@ def create_small_test_jobs(num_jobs: int = 3, queries_per_job: int = 10) -> list
                 "q": f"{zip_code} {keyword}"
             })
 
-        bigquery_ops.enqueue_queries(job_id, queries)
+        enqueue_queries(job_id, queries)
         job_ids.append(job_id)
 
         print(f"Created job {i+1}/{num_jobs}: {job_id} with {len(queries)} queries")

@@ -11,17 +11,14 @@
 
 set -euo pipefail
 
+# Load shared validation helpers
+source "$(dirname "$0")/scripts/lib/validation_helpers.sh"
+
 # Configuration
 PROJECT_ID="${BIGQUERY_PROJECT_ID:-brite-nites-data-platform}"
 DATASET="${BIGQUERY_DATASET:-raw_data}"
 CANARY_STATE="${1:-RI}"  # Small state for canary
 SKIP_MIGRATIONS="${2:-false}"
-
-# Colors for output
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-NC='\033[0m' # No Color
 
 echo "============================================================================"
 echo "Serper Tap - Production Deployment"
@@ -33,22 +30,6 @@ echo ""
 
 # Results tracking
 declare -A RESULTS
-
-# Helper functions
-pass() {
-    echo -e "${GREEN}✅ PASS${NC}: $1"
-    RESULTS["$1"]="PASS"
-}
-
-fail() {
-    echo -e "${RED}❌ FAIL${NC}: $1"
-    RESULTS["$1"]="FAIL"
-}
-
-warn() {
-    echo -e "${YELLOW}⚠️  WARN${NC}: $1"
-    RESULTS["$1"]="WARN"
-}
 
 # ============================================================================
 # Step 0: Prerequisites Check
@@ -218,24 +199,7 @@ fi
 echo ""
 echo "Step 7: Measuring performance..."
 
-QPM_RESULT=$(bq query --use_legacy_sql=false --format=csv \
-    "SELECT ROUND(60.0*COUNT(*)/NULLIF(TIMESTAMP_DIFF(MAX(ran_at),MIN(ran_at),SECOND),0),1) as qpm
-     FROM \`$PROJECT_ID.$DATASET.serper_queries\`
-     WHERE ran_at >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 30 MINUTE)
-       AND status='success'" 2>&1 | tail -1)
-
-if [ -n "$QPM_RESULT" ] && [ "$QPM_RESULT" != "null" ]; then
-    QPM_VALUE=$(echo "$QPM_RESULT" | tr -d ' ')
-    if (( $(echo "$QPM_VALUE >= 300" | bc -l) )); then
-        pass "QPM target met: $QPM_VALUE qpm (target ≥300)"
-    elif (( $(echo "$QPM_VALUE >= 150" | bc -l) )); then
-        warn "QPM below target: $QPM_VALUE qpm (target ≥300)"
-    else
-        fail "QPM critically low: $QPM_VALUE qpm (target ≥300)"
-    fi
-else
-    warn "QPM calculation failed (insufficient data)"
-fi
+check_qpm 30 300 150
 
 # ============================================================================
 # Step 8: Idempotency Check
@@ -276,29 +240,7 @@ fi
 echo ""
 echo "Step 10: Checking JSON parsing health..."
 
-JSON_HEALTH=$(bq query --use_legacy_sql=false --format=csv \
-    "SELECT
-       COUNTIF(payload IS NULL AND payload_raw IS NOT NULL) AS unparsable,
-       COUNTIF(payload IS NOT NULL) AS parsed
-     FROM \`$PROJECT_ID.$DATASET.serper_places\`
-     WHERE ingest_ts >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 24 HOUR)" 2>&1 | tail -1)
-
-UNPARSABLE=$(echo "$JSON_HEALTH" | cut -d',' -f1)
-PARSED=$(echo "$JSON_HEALTH" | cut -d',' -f2)
-TOTAL=$((UNPARSABLE + PARSED))
-
-if [ "$TOTAL" -gt 0 ]; then
-    PARSE_PCT=$(echo "scale=2; 100 * $PARSED / $TOTAL" | bc)
-    if (( $(echo "$PARSE_PCT >= 99.5" | bc -l) )); then
-        pass "JSON parsing healthy: $PARSE_PCT% success ($UNPARSABLE failures preserved)"
-    elif (( $(echo "$PARSE_PCT >= 99.0" | bc -l) )); then
-        warn "JSON parsing: $PARSE_PCT% success ($UNPARSABLE failures)"
-    else
-        fail "JSON parsing degraded: $PARSE_PCT% success"
-    fi
-else
-    warn "No recent place data for JSON health check"
-fi
+check_json_health 24 99.5 99.0
 
 # ============================================================================
 # Summary

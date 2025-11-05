@@ -23,7 +23,14 @@ import uuid
 from typing import Any
 
 from src.models.schemas import JobParams
-from src.operations import bigquery_ops
+from src.operations.job_ops import create_job, update_job_stats
+from src.operations.place_ops import store_places
+from src.operations.query_ops import (
+    batch_skip_remaining_pages,
+    batch_update_query_statuses,
+    dequeue_batch,
+    enqueue_queries,
+)
 from src.tasks import serper_tasks
 
 
@@ -66,7 +73,7 @@ def create_test_job(batch_size: int) -> tuple[str, int]:
         batch_size=batch_size,
         concurrency=20
     )
-    bigquery_ops.create_job(job_id=job_id, params=params)
+    create_job(job_id=job_id, params=params)
 
     # Create minimal test queries (limit to batch_size)
     queries = []
@@ -82,7 +89,7 @@ def create_test_job(batch_size: int) -> tuple[str, int]:
             "q": f"{zip_code} {keyword}"
         })
 
-    bigquery_ops.enqueue_queries(job_id, queries)
+    enqueue_queries(job_id, queries)
 
     return job_id, len(queries)
 
@@ -110,7 +117,7 @@ def process_batch_with_timing(
 
     # Phase 1: Dequeue batch
     t_start = time.perf_counter()
-    queries = bigquery_ops.dequeue_batch(job_id, batch_size)
+    queries = dequeue_batch(job_id, batch_size)
     timings['dequeue'] = time.perf_counter() - t_start
 
     if not queries:
@@ -182,10 +189,10 @@ def process_batch_with_timing(
 
     # Phase 4: Batched BigQuery updates
     t_start = time.perf_counter()
-    updated_count = bigquery_ops.batch_update_query_statuses(job_id, status_updates)
+    updated_count = batch_update_query_statuses(job_id, status_updates)
 
     if zips_to_skip:
-        skipped_count = bigquery_ops.batch_skip_remaining_pages(job_id, zips_to_skip)
+        skipped_count = batch_skip_remaining_pages(job_id, zips_to_skip)
     else:
         skipped_count = 0
 
@@ -197,7 +204,7 @@ def process_batch_with_timing(
     # Phase 5: Store places
     t_start = time.perf_counter()
     if places_to_store:
-        stored_count = bigquery_ops.store_places(job_id, places_to_store)
+        stored_count = store_places(job_id, places_to_store)
     else:
         stored_count = 0
     timings['place_storage'] = time.perf_counter() - t_start
@@ -207,7 +214,7 @@ def process_batch_with_timing(
 
     # Phase 6: Update job stats
     t_start = time.perf_counter()
-    bigquery_ops.update_job_stats(job_id)
+    update_job_stats(job_id)
     timings['stats_update'] = time.perf_counter() - t_start
 
     # Calculate totals

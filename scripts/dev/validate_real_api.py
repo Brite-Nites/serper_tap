@@ -19,7 +19,8 @@ import uuid
 
 from src.flows.test_batch import test_batch_processing
 from src.models.schemas import JobParams
-from src.operations import bigquery_ops
+from src.operations.job_ops import create_job, get_job_status
+from src.operations.query_ops import enqueue_queries
 from src.utils.config import settings
 
 
@@ -74,14 +75,14 @@ def validate_real_api():
         batch_size=10,
         concurrency=3
     )
-    bigquery_ops.create_job(job_id=job_id, params=params)
+    create_job(job_id=job_id, params=params)
 
     # Create queries
     queries = [
         {"zip": zip_code, "page": page, "q": f"{zip_code} {keyword}"}
         for page in range(1, pages + 1)
     ]
-    bigquery_ops.enqueue_queries(job_id, queries)
+    enqueue_queries(job_id, queries)
 
     print("✅ Test job created")
     print()
@@ -137,7 +138,7 @@ def validate_real_api():
         print()
 
         # Check job stats
-        job_status = bigquery_ops.get_job_status(job_id)
+        job_status = get_job_status(job_id)
         print("Job Statistics:")
         print(f"  Total queries: {job_status['totals']['queries']}")
         print(f"  Successful: {job_status['totals']['successes']}")

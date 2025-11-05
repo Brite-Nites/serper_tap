@@ -21,7 +21,8 @@ import argparse
 import uuid
 
 from src.models.schemas import JobParams
-from src.operations import bigquery_ops
+from src.operations.job_ops import create_job, get_zips_for_state, update_job_stats
+from src.operations.query_ops import enqueue_queries
 
 
 def setup_test_job(
@@ -71,12 +72,12 @@ def setup_test_job(
 
     # Step 3: Create job in BigQuery
     print(f"\nCreating job in serper_jobs table...")
-    result = bigquery_ops.create_job(job_id, params)
+    result = create_job(job_id, params)
     print(f"  ✓ Job created at {result['created_at']}")
 
     # Step 4: Get zip codes for state
     print(f"\nRetrieving zip codes for {state}...")
-    all_zips = bigquery_ops.get_zips_for_state(state)
+    all_zips = get_zips_for_state(state)
 
     if not all_zips:
         print(f"  ✗ No zip codes found for state {state}")
@@ -108,12 +109,12 @@ def setup_test_job(
 
     # Step 6: Enqueue queries in BigQuery
     print(f"\nEnqueuing queries in serper_queries table...")
-    inserted = bigquery_ops.enqueue_queries(job_id, queries)
+    inserted = enqueue_queries(job_id, queries)
     print(f"  ✓ Inserted {inserted} new queries")
 
     # Step 7: Update job stats to reflect queued queries
     print(f"\nUpdating job statistics...")
-    stats = bigquery_ops.update_job_stats(job_id)
+    stats = update_job_stats(job_id)
     print(f"  ✓ Job stats updated:")
     print(f"    - Queries: {stats['queries']}")
     print(f"    - Zips: {stats['zips']}")

@@ -17,12 +17,8 @@ set -e  # Exit on error
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 cd "$SCRIPT_DIR"
 
-# Colors for output
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-NC='\033[0m' # No Color
+# Load shared validation helpers
+source "$(dirname "$0")/scripts/lib/validation_helpers.sh"
 
 echo "=================================================="
 echo "🚀 Production Readiness Validation - Serper Tap"
