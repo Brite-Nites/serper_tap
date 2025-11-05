@@ -1,14 +1,10 @@
 # Serper Place Scraping Pipeline
 
-A production-grade web scraping pipeline that fetches business listings from Serper.dev using a BigQuery-backed queue architecture for reliable, idempotent processing at scale.
+![CI](https://github.com/brite-nites/serper_tap/workflows/CI/badge.svg)
+![Python 3.11](https://img.shields.io/badge/python-3.11-blue.svg)
+![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)
 
-## What It Does
-
-This pipeline implements an async job queue model where:
-- External systems trigger job creation via CLI
-- Jobs are decomposed into queries and enqueued in BigQuery
-- Prefect workers on GCE continuously process queued items
-- All operations are idempotent with atomic dequeue guarantees
+Production-grade web scraping pipeline that fetches business listings from Serper.dev using a BigQuery-backed queue architecture.
 
 **Key Features:**
 - ✅ 300+ queries/minute throughput
@@ -18,94 +14,54 @@ This pipeline implements an async job queue model where:
 
 ## Quick Start
 
-### Prerequisites
-
-- Python 3.11
-- Google Cloud project with BigQuery enabled
-- (Production) GCE VM with attached service account
-
 ### Installation
 
 ```bash
-# Install Poetry
+# Install Poetry and dependencies
 curl -sSL https://install.python-poetry.org | python3 -
-
-# Clone and install dependencies
-git clone <repo-url>
-cd serper_tap
 poetry install
 
-# Activate environment
-poetry shell
-```
+# Set up pre-commit hooks
+poetry run pre-commit install
 
-### Configuration
-
-**Local Development:**
-```bash
-# Option 1: Use gcloud ADC (recommended)
+# Configure authentication (see ADR-0002)
 gcloud auth application-default login
 gcloud config set project your-project-id
-
-# Option 2: Use keyfile
-cp .env.example .env
-# Edit .env:
-#   GOOGLE_APPLICATION_CREDENTIALS=/path/to/keyfile.json
-#   BIGQUERY_PROJECT_ID=your-project
-#   BIGQUERY_DATASET=raw_data
 ```
-
-**Production:** See [deploy/README.md](./deploy/README.md) for GCE deployment guide.
 
 ### Create BigQuery Tables
 
 ```bash
-# Create datasets
 bq mk --dataset ${PROJECT_ID}:raw_data
 bq mk --dataset ${PROJECT_ID}:reference
-
-# Run schema DDL
 bq query --project_id=${PROJECT_ID} < sql/schema.sql
 ```
 
 ### Run a Job
 
 ```bash
-# Create a job
-poetry run serper-create-job \
-  --keyword "bars" \
-  --state "AZ" \
-  --pages 3
-
-# Output: job_id=29ff7292-f104-49b9-a0fb-eb2c044b29de
-
-# Process batches (runs until job completes)
+# Create and process a job
+poetry run serper-create-job --keyword "bars" --state "AZ" --pages 3
 poetry run serper-process-batches
 
 # Monitor progress
-poetry run serper-monitor-job 29ff7292-f104-49b9-a0fb-eb2c044b29de
-```
-
-### Health Check
-
-```bash
+poetry run serper-monitor-job <job_id>
 poetry run serper-health-check --json
 ```
 
 ## Documentation
 
+**Core Documentation:**
 - **[ARCHITECTURE.md](./ARCHITECTURE.md)** - System design, data flow, BigQuery schema, performance
 - **[OPERATIONS.md](./OPERATIONS.md)** - Operational runbooks, monitoring, troubleshooting
-- **[deploy/README.md](./deploy/README.md)** - Production deployment guide
-- **[SPECIFICATION.md](./SPECIFICATION.md)** - Original technical specification
+- **[CONTRIBUTING.md](./CONTRIBUTING.md)** - Developer setup and workflow
+- **[deploy/README.md](./deploy/README.md)** - Production GCE deployment guide
 
-### Architecture Decisions
-
+**Architecture Decisions:**
 - **[ADR-0001](./docs/decisions/0001-safe-parse-json.md)** - Dual JSON columns with SAFE.PARSE_JSON
 - **[ADR-0002](./docs/decisions/0002-adc-vs-keyfile.md)** - Application Default Credentials vs keyfiles
 
-### Additional Documentation
-
+**Additional Resources:**
 - [Performance Analysis](./docs/performance_analysis.md) - Benchmarks and optimization details
 - [Production Readiness](./docs/production_readiness.md) - Production deployment assessment
 
@@ -113,39 +69,27 @@ poetry run serper-health-check --json
 
 ```
 serper_tap/
-├── src/
-│   ├── cli.py                 # Command-line interface (4 commands)
-│   ├── models/                # Pydantic schemas
-│   ├── utils/                 # Config, BigQuery client, timing
-│   ├── operations/            # Plain Python SQL operations
+├── src/                       # Production package
+│   ├── cli.py                 # Command-line interface
+│   ├── operations/            # BigQuery SQL operations
 │   ├── tasks/                 # Prefect task wrappers
 │   └── flows/                 # Prefect orchestration flows
 ├── sql/                       # BigQuery schema DDL
 ├── deploy/                    # GCE deployment scripts
 ├── scripts/ops/               # Production operator tools
-├── scripts/dev/               # Development utilities
-├── examples/                  # Example flows (not packaged)
 └── docs/                      # Architecture decisions, guides
 ```
 
 ## Troubleshooting
 
-**"Could not determine credentials"**
+**Authentication errors:**
 ```bash
 gcloud auth application-default login
 ```
 
-**"Permission denied" on BigQuery**
-- Verify service account has `roles/bigquery.dataEditor` and `roles/bigquery.jobUser`
+**Permission errors:** Verify service account has `roles/bigquery.dataEditor` and `roles/bigquery.jobUser`
 
-**"Table not found"**
-```bash
-bq query --project_id=${PROJECT_ID} < sql/schema.sql
-```
-
-## Contributing
-
-See [ARCHITECTURE.md](./ARCHITECTURE.md) for system design details before making changes.
+**Table not found:** Run `bq query --project_id=${PROJECT_ID} < sql/schema.sql`
 
 ## License
 

@@ -19,7 +19,7 @@ def check_bigquery_connection() -> dict[str, Any]:
         client = get_bigquery_client()
 
         # Simple query to test connection
-        query = f"""
+        query = """
         SELECT 1 as health_check
         """
 

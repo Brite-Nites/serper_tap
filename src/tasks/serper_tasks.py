@@ -8,7 +8,7 @@ import time
 from typing import Any
 
 import httpx
-from prefect import task, get_run_logger
+from prefect import get_run_logger, task
 
 from src.utils.config import settings
 from src.utils.timing import timing
@@ -164,9 +164,9 @@ def _fetch_real_api(query: dict[str, Any]) -> dict[str, Any]:
 
         # Categorize errors by status code
         if status_code == 401:
-            logger.error(f"Serper API authentication failed - check API key")
+            logger.error("Serper API authentication failed - check API key")
         elif status_code == 429:
-            logger.warning(f"Serper API rate limit exceeded - will retry")
+            logger.warning("Serper API rate limit exceeded - will retry")
         elif 400 <= status_code < 500:
             logger.error(
                 f"Serper API client error {status_code} for {query['q']} page {query['page']}: "
@@ -182,7 +182,7 @@ def _fetch_real_api(query: dict[str, Any]) -> dict[str, Any]:
         # Prefect will retry automatically with exponential backoff
         raise
 
-    except httpx.TimeoutException as e:
+    except httpx.TimeoutException:
         logger.warning(
             f"Serper API timeout after {settings.serper_timeout_seconds}s "
             f"for {query['q']} page {query['page']} - will retry"

@@ -133,7 +133,7 @@ def create_scraping_job(
     create_job_task(job_id, params)
 
     # Step 7: Generate all query combinations (zip × page)
-    logger.info(f"Generating query details...")
+    logger.info("Generating query details...")
     queries = []
     for zip_code in zips:
         for page in range(1, pages + 1):

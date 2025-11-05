@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Quick job progress check."""
 import sys
-from src.operations.bigquery_ops import get_job_status
+
+from src.operations import get_job_status
 
 if __name__ == "__main__":
     job_id = sys.argv[1] if len(sys.argv) > 1 else None

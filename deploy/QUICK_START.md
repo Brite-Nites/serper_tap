@@ -276,7 +276,7 @@ git tag -l | tail -10
 4. **Review full documentation**
    - `deploy/README.md` - Comprehensive deployment guide
    - `OPERATIONS.md` - Daily operations and troubleshooting
-   - `dashboards.sql` - Monitoring queries
+   - `sql/views/dashboards.sql` - Monitoring queries
 
 ---
 

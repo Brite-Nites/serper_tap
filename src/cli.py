@@ -5,7 +5,7 @@ Provides CLI commands for running flows and monitoring jobs.
 
 import argparse
 import sys
-from typing import Optional
+from datetime import UTC
 
 from src.flows.create_job import create_scraping_job
 from src.flows.process_batches import process_job_batches
@@ -80,7 +80,7 @@ def create_job_cli():
         dry_run=args.dry_run
     )
 
-    print(f"\nCreating scraping job:")
+    print("\nCreating scraping job:")
     print(f"  Keyword: {params.keyword}")
     print(f"  State: {params.state}")
     print(f"  Pages: {params.pages}")
@@ -99,7 +99,7 @@ def create_job_cli():
         print(f"Job ID: {result['job_id']}")
         print(f"Status: {result['status']}")
         print(f"Total queries: {result.get('total_queries', 'N/A')}")
-        print(f"\nTo monitor progress:")
+        print("\nTo monitor progress:")
         print(f"  serper-monitor-job {result['job_id']}")
         print()
 
@@ -178,8 +178,9 @@ def monitor_job_cli():
 
     # Import and run the monitor script
     # Note: This delegates to the existing scripts/monitor_job.py logic
-    from src.operations.bigquery_ops import get_job_status
     import time
+
+    from src.operations import get_job_status
 
     print(f"\nMonitoring job: {args.job_id}")
     print(f"Polling every {args.interval} seconds (Ctrl+C to stop)\n")
@@ -244,9 +245,9 @@ def health_check_cli():
     args = parser.parse_args()
 
     try:
-        from datetime import datetime, timezone
+        from datetime import datetime
         health = get_system_health()
-        health["timestamp"] = datetime.now(timezone.utc).isoformat()
+        health["timestamp"] = datetime.now(UTC).isoformat()
 
         if args.json:
             import json

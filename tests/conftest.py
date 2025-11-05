@@ -4,8 +4,7 @@ This file is automatically loaded by pytest and provides fixtures
 that can be used across all test files.
 """
 
-import os
-from datetime import datetime, timedelta
+from datetime import datetime
 from unittest.mock import MagicMock, patch
 
 import pytest

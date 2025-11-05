@@ -10,7 +10,7 @@ This module handles job CRUD operations:
 - get_zips_for_state: Reference data for job planning
 """
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from google.cloud import bigquery
@@ -66,7 +66,7 @@ def create_job(job_id: str, params: JobParams) -> dict[str, Any]:
     return {
         "job_id": job_id,
         "status": "running",
-        "created_at": datetime.now(timezone.utc).isoformat()
+        "created_at": datetime.now(UTC).isoformat()
     }
 
 

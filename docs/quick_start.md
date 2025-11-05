@@ -13,7 +13,7 @@ Edit your `.env` file to use the real Serper API:
 
 ```bash
 USE_MOCK_API=false
-SERPER_API_KEY=7d8f04d6f5bc56bfcf85220dbfc25e19596b3559
+SERPER_API_KEY=YOUR_SERPER_API_KEY_HERE
 ```
 
 Your `.env` should already have these values. Just verify `USE_MOCK_API=false`.

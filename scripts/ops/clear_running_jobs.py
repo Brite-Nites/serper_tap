@@ -18,7 +18,8 @@ import argparse
 import sys
 
 from google.cloud import bigquery
-from src.operations.bigquery_ops import get_running_jobs
+
+from src.operations import get_running_jobs
 from src.utils.bigquery_client import execute_dml
 from src.utils.config import settings
 
@@ -118,7 +119,7 @@ def clear_running_jobs(confirm: bool = False, keep_job_ids: list[str] = None):
     print("✅ JOBS CLEARED")
     print("=" * 70)
     print(f"Updated {rows_updated} jobs to status='failed'")
-    print(f"Error message: 'manually_cleared'")
+    print("Error message: 'manually_cleared'")
     print()
 
     # Show remaining running jobs

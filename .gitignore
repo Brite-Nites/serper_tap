@@ -4,6 +4,8 @@ __pycache__/
 *$py.class
 *.so
 .Python
+
+# Build artifacts
 build/
 develop-eggs/
 dist/
@@ -33,17 +35,20 @@ ENV/
 # IDE
 .vscode/
 .idea/
+.claude/
 *.swp
 *.swo
 *~
 
 # OS
 .DS_Store
+.AppleDouble
+.LSOverride
 Thumbs.db
 
-# Google Cloud credentials
-*.json
-!schema.json
+# Google Cloud credentials (defense in depth)
+credentials/**
+!credentials/.gitkeep
 
 # Testing
 .pytest_cache/

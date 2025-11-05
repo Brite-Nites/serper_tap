@@ -1,8 +1,6 @@
 """Tests for health check utilities."""
 
-from unittest.mock import MagicMock, patch
-
-import pytest
+from unittest.mock import MagicMock
 
 from src.utils.health import (
     check_bigquery_connection,

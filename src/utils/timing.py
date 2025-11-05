@@ -5,13 +5,12 @@ Provides a context manager for timing operations and logging results.
 
 import time
 from contextlib import contextmanager
-from typing import Optional
 
 from prefect import get_run_logger
 
 
 @contextmanager
-def timing(operation: str, log_threshold_ms: Optional[float] = None):
+def timing(operation: str, log_threshold_ms: float | None = None):
     """Context manager for timing operations.
 
     Usage:

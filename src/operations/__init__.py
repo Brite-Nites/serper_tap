@@ -20,6 +20,9 @@ from src.operations.job_ops import (
     update_job_stats,
 )
 
+# Place operations
+from src.operations.place_ops import store_places
+
 # Query operations
 from src.operations.query_ops import (
     batch_skip_remaining_pages,
@@ -30,9 +33,6 @@ from src.operations.query_ops import (
     skip_remaining_pages,
     update_query_status,
 )
-
-# Place operations
-from src.operations.place_ops import store_places
 
 __all__ = [
     # Job operations

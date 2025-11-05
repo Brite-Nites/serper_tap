@@ -1,0 +1,20 @@
+# Git Archive Export Configuration
+# Files/directories marked with export-ignore will be excluded from git archive
+
+# Caches and local artifacts
+.venv/ export-ignore
+.ruff_cache/ export-ignore
+.claude/ export-ignore
+test_results/ export-ignore
+dist/ export-ignore
+credentials/ export-ignore
+
+# Development-only code
+examples/ export-ignore
+scripts/dev/ export-ignore
+deploy/ export-ignore
+docs/ export-ignore
+
+# Environment files (exclude all except .env.example)
+.env export-ignore
+.env.* export-ignore

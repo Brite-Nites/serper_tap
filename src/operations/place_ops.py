@@ -7,7 +7,7 @@ This module handles place persistence:
 
 import json
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from google.cloud import bigquery
@@ -46,7 +46,7 @@ def _store_places_chunk(job_id: str, places: list[dict[str, Any]]) -> int:
             "job_id": job_id,
             "source": "serper_places",
             "source_version": "v1",
-            "ingest_ts": place.get("ingest_ts", datetime.now(timezone.utc)),
+            "ingest_ts": place.get("ingest_ts", datetime.now(UTC)),
             "keyword": place["keyword"],
             "state": place["state"],
             "zip": place["zip"],

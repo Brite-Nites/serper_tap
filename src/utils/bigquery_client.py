@@ -7,9 +7,9 @@ with proper authentication and configuration.
 import os
 from functools import lru_cache
 
+import google.auth
 from google.cloud import bigquery
 from google.oauth2 import service_account
-import google.auth
 
 from src.utils.config import settings
 

@@ -1,16 +1,25 @@
 """DEPRECATED: Compatibility shim for bigquery_ops.
 
+⚠️  DEPRECATION NOTICE ⚠️
+This module is deprecated and will be removed on 2026-02-01.
+Migrate all imports to use the new focused modules.
+
 This module has been split into focused modules for better maintainability:
-- job_ops.py: Job lifecycle operations
-- query_ops.py: Query queue management
-- place_ops.py: Place storage operations
+- job_ops.py: Job lifecycle operations (create_job, get_job_status, mark_job_done, etc.)
+- query_ops.py: Query queue management (enqueue_queries, dequeue_batch, update_query_status, etc.)
+- place_ops.py: Place storage operations (store_places)
 
 MIGRATION GUIDE:
-Old: from src.operations.bigquery_ops import create_job
-New: from src.operations import create_job
+Old (deprecated):
+    from src.operations.bigquery_ops import create_job, dequeue_batch, store_places
+
+New (preferred):
+    from src.operations import create_job, dequeue_batch, store_places
 
 All functions are re-exported from src.operations.__init__ for backward compatibility.
-This shim will be removed in a future version.
+
+REMOVAL DATE: 2026-02-01
+GitHub Issue: See issue #1 or CONTRIBUTING.md for migration guidance
 """
 
 import warnings

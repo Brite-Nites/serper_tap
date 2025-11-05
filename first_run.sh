@@ -76,6 +76,29 @@ warn() {
 }
 
 # ----------------------------------------------------------------------------
+# Optional: Run BigQuery Migrations
+# ----------------------------------------------------------------------------
+if [ "${RUN_MIGRATIONS:-false}" = "true" ]; then
+    echo "============================================================================"
+    echo "APPLYING BIGQUERY MIGRATIONS (RUN_MIGRATIONS=true)"
+    echo "============================================================================"
+    if [ -d "sql/migrations" ]; then
+        for migration in sql/migrations/*.sql; do
+            [ -f "$migration" ] || continue
+            echo "Applying: $(basename "$migration")"
+            bq query --project_id="${BIGQUERY_PROJECT_ID}" < "$migration" || {
+                echo "❌ Migration failed: $(basename "$migration")"
+                exit 1
+            }
+        done
+        echo -e "${GREEN}✅ All migrations applied${NC}"
+    else
+        echo "No sql/migrations directory found; skipping."
+    fi
+    echo ""
+fi
+
+# ----------------------------------------------------------------------------
 # Step 0: Tooling Validation
 # ----------------------------------------------------------------------------
 echo "Step 0: Validating tooling..."

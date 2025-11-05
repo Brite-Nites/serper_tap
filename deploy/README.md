@@ -524,7 +524,7 @@ After successful deployment:
 
 **Internal**:
 - `OPERATIONS.md`: Daily operations and troubleshooting
-- `dashboards.sql`: Production monitoring queries
+- `sql/views/dashboards.sql`: Production monitoring queries
 - GitHub Issues: [Your repo URL]/issues
 
 ---

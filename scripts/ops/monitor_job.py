@@ -10,16 +10,18 @@ Example:
 
 import os
 import sys
-_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+
+_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
 
 import time
 from datetime import datetime
 
-from src.operations.bigquery_ops import get_job_status
-from src.utils.bigquery_client import execute_query
 from google.cloud import bigquery
+
+from src.operations import get_job_status
+from src.utils.bigquery_client import execute_query
 from src.utils.config import settings
 
 

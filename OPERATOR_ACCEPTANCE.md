@@ -348,13 +348,13 @@ Signature: _____________  Date/Time: _____________
 
 ## 7) 15-MIN VALIDATION RUNBOOK
 
-**File**: `production_validation.sh`
+**File**: `first_run.sh`
 
 ```bash
 #!/bin/bash
-# 15-Minute Production Validation - Serper Tap Pipeline
-# Usage: ./production_validation.sh {{PROJECT}} {{COST_PER_CREDIT}}
-# Example: ./production_validation.sh brite-nites-internal 0.01
+# Comprehensive Production Validation - Serper Tap Pipeline
+# Usage: ./first_run.sh
+# Note: Run from repository root after deployment
 
 set -euo pipefail
 
@@ -523,12 +523,12 @@ exit 0
 
 **Make Executable**:
 ```bash
-chmod +x production_validation.sh
+chmod +x first_run.sh
 ```
 
 **Run Validation**:
 ```bash
-./production_validation.sh brite-nites-internal 0.01
+./first_run.sh
 ```
 
 **Expected**: Exit code 0, all gates show green checkmarks, no errors.

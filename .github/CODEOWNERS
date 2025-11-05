@@ -1,0 +1,34 @@
+# CODEOWNERS file for serper_tap
+#
+# This file defines code ownership for automatic review requests.
+# When a PR touches these paths, the specified owners will be requested for review.
+#
+# Documentation: https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+
+# Default owners for everything in the repo
+* @brite-nites/data-platform
+
+# Core operations - require review from data platform team
+/src/operations/** @brite-nites/data-platform
+/src/flows/** @brite-nites/data-platform
+/src/tasks/** @brite-nites/data-platform
+
+# Production operator scripts - require review from ops team
+/scripts/ops/** @brite-nites/data-platform @brite-nites/ops
+
+# Database schema changes - require careful review
+/sql/** @brite-nites/data-platform
+
+# Deployment scripts - require ops approval
+/deploy/** @brite-nites/data-platform @brite-nites/ops
+
+# CI/CD and tooling - data platform team
+/.github/** @brite-nites/data-platform
+/pyproject.toml @brite-nites/data-platform
+/.pre-commit-config.yaml @brite-nites/data-platform
+
+# Documentation - anyone can contribute, but data platform team reviews
+/docs/** @brite-nites/data-platform
+/ARCHITECTURE.md @brite-nites/data-platform
+/OPERATIONS.md @brite-nites/data-platform
+/CONTRIBUTING.md @brite-nites/data-platform

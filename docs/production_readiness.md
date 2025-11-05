@@ -2,7 +2,7 @@
 
 **Date**: 2025-10-30
 **Status**: ✅ **READY FOR PRODUCTION**
-**Validation Script**: `validate_production_ready.sh`
+**Validation Script**: `first_run.sh`
 
 ---
 
@@ -570,13 +570,13 @@ poetry run serper-monitor-job --help
 
 **Evidence**:
 ```bash
-# File: scripts/monitor_job.py
-$ grep -n "total_queries.*totals\|totals\[.queries.\]" scripts/monitor_job.py
+# File: scripts/ops/monitor_job.py
+$ grep -n "total_queries.*totals\|totals\[.queries.\]" scripts/ops/monitor_job.py
 44:            total_queries = totals['queries']
 103:                print(f"Total queries: {totals['queries']}")
 ```
 
-**Code Snippet** (scripts/monitor_job.py:44):
+**Code Snippet** (scripts/ops/monitor_job.py:44):
 ```python
 total_queries = totals['queries']  # Dynamic from BigQuery
 # Old code: total_queries = 1248  # Hardcoded - REMOVED
@@ -692,12 +692,12 @@ default_pages: int = Field(
 
 ## Part 3: 15-Minute Validation Runbook
 
-**Script**: `validate_production_ready.sh`
+**Script**: `first_run.sh`
 
 **Usage**:
 ```bash
-chmod +x validate_production_ready.sh
-./validate_production_ready.sh
+chmod +x first_run.sh
+./first_run.sh
 ```
 
 **What it Does**:
@@ -758,7 +758,7 @@ chmod +x validate_production_ready.sh
 - [ ] Start Prefect worker: `prefect worker start --pool default-pool` (run in background)
 - [ ] Update Python constraint: `poetry lock --no-update`
 - [ ] Configure environment variables (see below)
-- [ ] Run validation script: `./validate_production_ready.sh`
+- [ ] Run validation script: `./first_run.sh`
 
 **Environment Variables to Configure**:
 ```bash
@@ -867,7 +867,7 @@ poetry run pytest -v
 poetry run pytest --cov=src --cov-report=html
 
 # Validate production readiness
-./validate_production_ready.sh
+./first_run.sh
 ```
 
 ### Prefect Deployment Management

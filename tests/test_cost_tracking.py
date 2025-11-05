@@ -1,9 +1,6 @@
 """Tests for cost tracking and budget management."""
 
-from datetime import datetime, timedelta
-from unittest.mock import patch
-
-import pytest
+from datetime import datetime
 
 from src.utils.cost_tracking import (
     check_budget_status,
