@@ -140,7 +140,7 @@ def analyze_results_task(job_results: list[dict[str, Any]], elapsed: float, num_
     }
 
 
-@flow(name="test-nested-parallelism", task_runner=ConcurrentTaskRunner(max_workers=20))
+@flow(name="test-nested-parallelism", task_runner=ConcurrentTaskRunner())
 def test_nested_parallelism_flow(num_jobs: int = 3, queries_per_job: int = 5) -> dict[str, Any]:
     """Test flow: Process multiple jobs in parallel, each with parallel queries.
 

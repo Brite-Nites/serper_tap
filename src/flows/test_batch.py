@@ -140,7 +140,7 @@ def process_batch_results_task(
     return places_to_store
 
 
-@flow(name="test-batch-processing", task_runner=ConcurrentTaskRunner(max_workers=20))
+@flow(name="test-batch-processing", task_runner=ConcurrentTaskRunner())
 def test_batch_processing(job_id: str, batch_size: int = 10) -> dict[str, Any]:
     """Test flow: Process one batch of queries for an existing job.
 
