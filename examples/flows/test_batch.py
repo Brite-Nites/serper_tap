@@ -19,7 +19,6 @@ from typing import Any
 from prefect import flow, get_run_logger, task
 from prefect.task_runners import ConcurrentTaskRunner
 
-from src.operations import bigquery_ops
 from src.tasks.bigquery_tasks import (
     batch_skip_remaining_pages_task,
     batch_update_query_statuses_task,

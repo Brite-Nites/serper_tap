@@ -1,8 +1,8 @@
 """Prefect task wrappers for BigQuery operations.
 
-These tasks are thin wrappers around bigquery_ops functions that add
+These tasks are thin wrappers around operations layer functions that add
 Prefect's retry logic and orchestration capabilities. All business logic
-remains in the operations layer.
+remains in the operations layer (job_ops, query_ops, place_ops).
 """
 
 from typing import Any
@@ -10,7 +10,24 @@ from typing import Any
 from prefect import task
 
 from src.models.schemas import JobParams
-from src.operations import bigquery_ops
+from src.operations.job_ops import (
+    create_job,
+    get_job_status,
+    get_running_jobs,
+    get_zips_for_state,
+    mark_job_done,
+    update_job_stats,
+)
+from src.operations.place_ops import store_places
+from src.operations.query_ops import (
+    batch_skip_remaining_pages,
+    batch_update_query_statuses,
+    dequeue_batch,
+    enqueue_queries,
+    reset_batch_to_queued,
+    skip_remaining_pages,
+    update_query_status,
+)
 
 
 @task(retries=3, retry_delay_seconds=5)
@@ -24,7 +41,7 @@ def create_job_task(job_id: str, params: JobParams) -> dict[str, Any]:
     Returns:
         Dict with job_id, status, and created_at
     """
-    return bigquery_ops.create_job(job_id, params)
+    return create_job(job_id, params)
 
 
 @task(retries=3, retry_delay_seconds=5)
@@ -37,7 +54,7 @@ def get_zips_for_state_task(state: str) -> list[str]:
     Returns:
         List of zip code strings
     """
-    return bigquery_ops.get_zips_for_state(state)
+    return get_zips_for_state(state)
 
 
 @task(retries=3, retry_delay_seconds=5)
@@ -51,7 +68,7 @@ def enqueue_queries_task(job_id: str, queries: list[dict[str, Any]]) -> int:
     Returns:
         Number of new queries inserted
     """
-    return bigquery_ops.enqueue_queries(job_id, queries)
+    return enqueue_queries(job_id, queries)
 
 
 @task(retries=3, retry_delay_seconds=5)
@@ -65,7 +82,7 @@ def dequeue_batch_task(job_id: str, batch_size: int) -> list[dict[str, Any]]:
     Returns:
         List of query dicts with keys: zip, page, q
     """
-    return bigquery_ops.dequeue_batch(job_id, batch_size)
+    return dequeue_batch(job_id, batch_size)
 
 
 @task(retries=3, retry_delay_seconds=5)
@@ -79,7 +96,7 @@ def store_places_task(job_id: str, places: list[dict[str, Any]]) -> int:
     Returns:
         Number of new places inserted
     """
-    return bigquery_ops.store_places(job_id, places)
+    return store_places(job_id, places)
 
 
 @task(retries=3, retry_delay_seconds=5)
@@ -105,7 +122,7 @@ def update_query_status_task(
         credits: API credits consumed
         error: Error message if failed
     """
-    bigquery_ops.update_query_status(
+    update_query_status(
         job_id=job_id,
         zip_code=zip_code,
         page=page,
@@ -127,7 +144,7 @@ def update_job_stats_task(job_id: str) -> dict[str, int]:
     Returns:
         Dict containing updated statistics
     """
-    return bigquery_ops.update_job_stats(job_id)
+    return update_job_stats(job_id)
 
 
 @task(retries=3, retry_delay_seconds=5)
@@ -150,7 +167,7 @@ def skip_remaining_pages_task(
     Returns:
         Number of queries marked as skipped
     """
-    return bigquery_ops.skip_remaining_pages(
+    return skip_remaining_pages(
         job_id=job_id,
         zip_code=zip_code,
         page=page,
@@ -170,7 +187,7 @@ def get_job_status_task(job_id: str) -> dict[str, Any]:
     Returns:
         Dict containing job metadata and statistics
     """
-    return bigquery_ops.get_job_status(job_id)
+    return get_job_status(job_id)
 
 
 @task(retries=3, retry_delay_seconds=5)
@@ -183,7 +200,7 @@ def get_running_jobs_task() -> list[dict[str, Any]]:
         List of job dicts with keys:
         - job_id, keyword, state, pages, batch_size
     """
-    return bigquery_ops.get_running_jobs()
+    return get_running_jobs()
 
 
 @task(retries=3, retry_delay_seconds=5)
@@ -195,7 +212,7 @@ def mark_job_done_task(job_id: str) -> None:
     Args:
         job_id: Job identifier
     """
-    bigquery_ops.mark_job_done(job_id)
+    mark_job_done(job_id)
 
 
 @task(retries=3, retry_delay_seconds=5)
@@ -208,7 +225,7 @@ def reset_batch_to_queued_task(claim_id: str) -> int:
     Returns:
         Number of queries reset to 'queued' status
     """
-    return bigquery_ops.reset_batch_to_queued(claim_id)
+    return reset_batch_to_queued(claim_id)
 
 
 @task(retries=3, retry_delay_seconds=5)
@@ -244,7 +261,7 @@ def batch_update_query_statuses_task(
         ]
         count = batch_update_query_statuses_task(job_id, updates)
     """
-    return bigquery_ops.batch_update_query_statuses(job_id, updates)
+    return batch_update_query_statuses(job_id, updates)
 
 
 @task(retries=3, retry_delay_seconds=5)
@@ -268,4 +285,4 @@ def batch_skip_remaining_pages_task(
         zips_to_skip = ["85001", "85002", "85003"]
         count = batch_skip_remaining_pages_task(job_id, zips_to_skip)
     """
-    return bigquery_ops.batch_skip_remaining_pages(job_id, zips_to_skip)
+    return batch_skip_remaining_pages(job_id, zips_to_skip)
