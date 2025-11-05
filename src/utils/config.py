@@ -15,9 +15,9 @@ class Settings(BaseSettings):
     """
 
     # Google Cloud BigQuery Configuration
-    google_application_credentials: str = Field(
-        ...,
-        description="Path to Google Cloud service account JSON key file"
+    google_application_credentials: str | None = Field(
+        default=None,
+        description="Path to Google Cloud service account JSON key file (optional if using ADC)"
     )
     bigquery_project_id: str = Field(
         ...,
