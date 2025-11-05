@@ -32,8 +32,9 @@ def get_bigquery_client() -> bigquery.Client:
     """
     credentials_path = settings.google_application_credentials
 
-    # Try application default credentials first (gcloud auth application-default login)
-    if "application_default_credentials.json" in credentials_path:
+    # Use Application Default Credentials if no explicit path provided
+    # This works on GCE VMs with attached service accounts or gcloud auth application-default login
+    if credentials_path is None or "application_default_credentials.json" in credentials_path:
         try:
             credentials, project = google.auth.default(
                 scopes=["https://www.googleapis.com/auth/bigquery"]
@@ -42,8 +43,14 @@ def get_bigquery_client() -> bigquery.Client:
             project = settings.bigquery_project_id or project
             client = bigquery.Client(credentials=credentials, project=project)
             return client
-        except Exception:
-            # Fall through to service account method
+        except Exception as e:
+            # If no credentials path provided, re-raise the error
+            if credentials_path is None:
+                raise ValueError(
+                    f"Failed to use Application Default Credentials: {e}. "
+                    "Ensure gcloud is configured or running on GCE with a service account."
+                ) from e
+            # Otherwise fall through to service account method
             pass
 
     # Validate credentials file exists
