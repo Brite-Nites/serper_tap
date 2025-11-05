@@ -15,7 +15,7 @@ EnvironmentFile=/opt/serper_tap/.env.production
 
 # Start the Prefect worker
 # Uses poetry to activate venv and run prefect worker
-ExecStart=/bin/bash -c 'cd /opt/serper_tap && /home/svc-prefect/.local/bin/poetry run prefect worker start --pool default-pool'
+ExecStart=/bin/bash -c 'cd /opt/serper_tap && /opt/serper_tap/.local/bin/poetry run prefect worker start --pool default-pool'
 
 # Restart policy
 Restart=on-failure
