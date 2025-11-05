@@ -285,7 +285,7 @@ def process_batch_results_and_track_stats(
     }
 
 
-@flow(name="process-job-batches", task_runner=ConcurrentTaskRunner(max_workers=settings.processor_max_workers))
+@flow(name="process-job-batches", task_runner=ConcurrentTaskRunner())
 def process_job_batches() -> dict[str, Any]:
     """Process batches for all running jobs until none remain.
 
