@@ -6,6 +6,12 @@ authors = ["Your Name <your.email@example.com>"]
 readme = "README.md"
 packages = [{include = "src"}]
 
+# Exclude development and example code from built artifacts
+exclude = [
+    "examples/",
+    "scripts/dev/",
+]
+
 [tool.poetry.dependencies]
 python = "~3.11"
 prefect = "^2.14"
