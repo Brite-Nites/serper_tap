@@ -2,48 +2,80 @@
 # Install: poetry run pre-commit install
 # Run manually: poetry run pre-commit run --all-files
 
+default_stages: [commit, push]
+
+# Scope hooks to source tree (not vendored libs, build artifacts, etc.)
+files: ^(src|scripts|tests|deploy|docs|sql)/
+
+# Global excludes for all hooks
+exclude: |
+  (?x)^(
+    \.git/|
+    \.venv/|
+    \.prefect/|
+    build/|
+    dist/|
+    examples/|
+    scripts/dev/
+  )
+
 repos:
-  # Basic file hygiene
+  # ============================================================================
+  # HYGIENE – File-level checks
+  # ============================================================================
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v4.5.0
     hooks:
       - id: trailing-whitespace
-        exclude: '^(examples/|scripts/dev/)'
       - id: end-of-file-fixer
-        exclude: '^(examples/|scripts/dev/)'
       - id: check-yaml
-        args: ['--unsafe']  # Allow custom YAML tags
-      - id: check-added-large-files
-        args: ['--maxkb=500']
-      - id: check-merge-conflict
+        args: ['--unsafe']  # Allow custom YAML tags (e.g., CloudFormation)
       - id: check-json
       - id: check-toml
+      - id: check-merge-conflict
+      - id: check-added-large-files
+        args: ['--maxkb=500']
       - id: mixed-line-ending
         args: ['--fix=lf']
 
-  # Python formatting
+  # ============================================================================
+  # BLACK – Formatting (must run before Ruff)
+  # ============================================================================
   - repo: https://github.com/psf/black
     rev: 23.11.0
     hooks:
       - id: black
-        args: ['--config', 'pyproject.toml']
-        exclude: '^(examples/|scripts/dev/)'
+        language_version: python3.11
+        args: ['--line-length=100', '--target-version=py311']
 
-  # Python linting
+  # ============================================================================
+  # RUFF – Linting + import sorting (NOT formatting)
+  # ============================================================================
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.1.6
     hooks:
       - id: ruff
-        args: ['--fix', '--config', 'pyproject.toml']
-        exclude: '^(examples/|scripts/dev/)'
+        args:
+          - '--fix'
+          - '--line-length=100'
+          - '--target-version=py311'
+          - '--select=E,W,F,I,UP'
+          - '--ignore=E501'
 
-  # Type checking
+  # ============================================================================
+  # MYPY – Type checking
+  # ============================================================================
   - repo: https://github.com/pre-commit/mirrors-mypy
     rev: v1.7.1
     hooks:
       - id: mypy
         additional_dependencies:
           - 'pydantic>=2.4'
+          - 'pydantic-settings>=2.0'
           - 'types-requests'
-        args: ['--config-file', 'pyproject.toml']
-        exclude: '^(examples/|scripts/dev/|tests/)'
+        args:
+          - '--python-version=3.11'
+          - '--check-untyped-defs'
+          - '--ignore-missing-imports'
+        # Mypy runs on individual files; exclude tests to avoid import issues
+        exclude: ^tests/

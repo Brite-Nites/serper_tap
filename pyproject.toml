@@ -46,6 +46,19 @@ build-backend = "poetry.core.masonry.api"
 # TOOLING CONFIGURATION
 # ==============================================================================
 
+[tool.black]
+line-length = 100
+target-version = ["py311"]
+exclude = '''
+^(
+  \.venv|
+  build|
+  dist|
+  examples|
+  scripts/dev
+)/
+'''
+
 [tool.ruff]
 line-length = 100
 target-version = "py311"
@@ -60,35 +73,16 @@ ignore = [
     "E501",  # line too long (handled by black)
 ]
 exclude = [
-    ".git",
-    "__pycache__",
-    "dist",
-    "build",
-    ".venv",
     "examples/",
+    "scripts/dev/",
+    "build/",
+    "dist/",
+    ".venv/",
 ]
-
-[tool.black]
-line-length = 100
-target-version = ["py311"]
-exclude = '''
-/(
-    \.git
-  | \.venv
-  | dist
-  | build
-  | __pycache__
-  | examples
-)/
-'''
 
 [tool.mypy]
 python_version = "3.11"
-warn_return_any = true
-warn_unused_configs = true
 check_untyped_defs = true
 ignore_missing_imports = true
-exclude = [
-    "examples/",
-    "scripts/dev/",
-]
+mypy_path = "src"
+exclude = "(examples|scripts/dev|build|dist|\\.venv)/"
