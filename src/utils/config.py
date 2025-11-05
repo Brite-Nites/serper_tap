@@ -15,9 +15,12 @@ class Settings(BaseSettings):
     """
 
     # Google Cloud BigQuery Configuration
+    # Note: Per ADR-0002, Application Default Credentials (ADC) is preferred.
+    # Leave this unset in production (GCE VMs use attached service account).
+    # For local dev, run `gcloud auth application-default login` instead of using a keyfile.
     google_application_credentials: str | None = Field(
         default=None,
-        description="Path to Google Cloud service account JSON key file (optional if using ADC)"
+        description="Path to service account keyfile (OPTIONAL - prefer ADC, see ADR-0002)"
     )
     bigquery_project_id: str = Field(
         ...,

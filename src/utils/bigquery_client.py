@@ -21,14 +21,19 @@ def get_bigquery_client() -> bigquery.Client:
     This function is cached to ensure we reuse the same client instance
     across multiple calls, which is more efficient for connection pooling.
 
-    Supports both service account keys and application default credentials.
+    Authentication Strategy (see ADR-0002):
+    1. **Preferred**: Application Default Credentials (ADC)
+       - Production GCE: Uses VM's attached service account (no keyfile)
+       - Local dev: Run `gcloud auth application-default login`
+    2. **Fallback**: Explicit keyfile via GOOGLE_APPLICATION_CREDENTIALS
+       - Only for local dev when ADC is not available
 
     Returns:
         bigquery.Client: Configured BigQuery client
 
     Raises:
         FileNotFoundError: If credentials file doesn't exist
-        ValueError: If credentials are invalid
+        ValueError: If credentials are invalid or ADC setup fails
     """
     credentials_path = settings.google_application_credentials
 
